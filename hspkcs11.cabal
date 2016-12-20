@@ -1,0 +1,33 @@
+name:           hspkcs11
+version:        0.1
+synopsis:       Wrapper for PKCS #11 interface
+homepage:       https://github.com/denisenkom/hspkcs11
+license:        MIT
+license-file:   LICENSE
+author:         Mikhail Denisenko
+category:       Cryptography
+build-type:     Simple
+cabal-version:  >=1.10
+build-tools: c2hs
+
+library
+    build-depends:
+        base,
+        unix
+    Include-dirs: include
+    exposed-modules:
+        Pkcs11
+    Default-language:  Haskell2010
+
+test-suite pkcs11-tests
+    type:               exitcode-stdio-1.0
+    main-is:            Test.hs
+    Include-dirs: include
+    other-modules:      Pkcs11
+    build-depends:
+        base,
+        testpack,
+        unix
+    default-language:   Haskell2010
+
+
