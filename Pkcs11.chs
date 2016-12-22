@@ -9,6 +9,7 @@ import System.Posix.DynamicLinker
 import Control.Monad
 import Control.Exception
 import qualified Data.ByteString.UTF8 as BU8
+import Data.ByteString.Unsafe
 
 #include "pkcs11import.h"
 
@@ -203,7 +204,10 @@ rvToStr {#const CKR_TOKEN_WRITE_PROTECTED#} = "token write protected"
 
 -- Attributes
 
-data Attribute = Class Int | KeyType Int | Label String
+data ClassType = Data | Certificate | PublicKey | PrivateKey | SecretKey | HWFeature | DomainParameters | Mechanism
+data KeyTypeType = RSA | DSA | DH | ECDSA | EC
+
+data Attribute = Class ClassType | KeyType KeyTypeType | Label String
 
 data LlAttribute = LlAttribute {
     attributeType :: {#type CK_ATTRIBUTE_TYPE#},
@@ -220,10 +224,23 @@ instance Storable LlAttribute where
     poke (p `plusPtr` ({#sizeof CK_ATTRIBUTE_TYPE#} + {#sizeof CK_VOID_PTR#})) (attributeSize x)
 
 
-_valueSize :: Attribute -> Int
-_valueSize (Class _) = {#sizeof CK_OBJECT_CLASS#}
-_valueSize (KeyType _) = {#sizeof CK_KEY_TYPE#}
-_valueSize (Label l) = BU8.length $ BU8.fromString l
+_classTypeVal :: ClassType -> {#type CK_OBJECT_CLASS#}
+_classTypeVal Data = {#const CKO_DATA#}
+_classTypeVal Certificate = {#const CKO_CERTIFICATE#}
+_classTypeVal PublicKey = {#const CKO_PUBLIC_KEY#}
+_classTypeVal PrivateKey = {#const CKO_PRIVATE_KEY#}
+_classTypeVal SecretKey = {#const CKO_SECRET_KEY#}
+_classTypeVal HWFeature = {#const CKO_HW_FEATURE#}
+_classTypeVal DomainParameters = {#const CKO_DOMAIN_PARAMETERS#}
+_classTypeVal Mechanism = {#const CKO_MECHANISM#}
+
+
+_keyTypeVal :: KeyTypeType -> {#type CK_KEY_TYPE#}
+_keyTypeVal RSA = {#const CKK_RSA#}
+_keyTypeVal DSA = {#const CKK_DSA#}
+_keyTypeVal DH = {#const CKK_DH#}
+_keyTypeVal ECDSA = {#const CKK_ECDSA#}
+_keyTypeVal EC = {#const CKK_EC#}
 
 
 _attrType :: Attribute -> {#type CK_ATTRIBUTE_TYPE#}
@@ -232,8 +249,16 @@ _attrType (KeyType _) = {#const CKA_KEY_TYPE#}
 _attrType (Label _) = {#const CKA_LABEL#}
 
 
+_valueSize :: Attribute -> Int
+_valueSize (Class _) = {#sizeof CK_OBJECT_CLASS#}
+_valueSize (KeyType _) = {#sizeof CK_KEY_TYPE#}
+_valueSize (Label l) = BU8.length $ BU8.fromString l
+
+
 _pokeValue :: Attribute -> Ptr () -> IO ()
-_pokeValue (Class c) ptr = poke (castPtr ptr :: Ptr {#type CK_OBJECT_CLASS#}) (fromIntegral c :: {#type CK_OBJECT_CLASS#})
+_pokeValue (Class c) ptr = poke (castPtr ptr :: Ptr {#type CK_OBJECT_CLASS#}) (_classTypeVal c :: {#type CK_OBJECT_CLASS#})
+_pokeValue (KeyType k) ptr = poke (castPtr ptr :: Ptr {#type CK_KEY_TYPE#}) (_keyTypeVal k :: {#type CK_KEY_TYPE#})
+_pokeValue (Label l) ptr = unsafeUseAsCStringLen (BU8.fromString l) $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
 
 
 _pokeValues :: [Attribute] -> Ptr () -> IO ()
