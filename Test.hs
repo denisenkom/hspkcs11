@@ -9,14 +9,6 @@ main = do
   putStrLn "getSlotInfo"
   slotInfo <- getSlotInfo lib 0
   putStrLn(show slotInfo)
-  putStrLn "openSession"
-  sess <- openSession lib 0 serialSession
-  putStrLn(show sess)
-  --rv <- findObjectsInit functionListPtr sess
-  --putStrLn(show rv)
-  --(rv, objectsHandles) <- findObjects functionListPtr sess 10
-  --putStrLn(show rv)
-  --putStrLn(show objectsHandles)
-  --rv <- findObjectsFinal functionListPtr sess
-  --putStrLn(show rv)
+  objects <- withSession lib 0 serialSession (\sess -> do {findObjects sess []})
+  putStrLn $ show objects
   return ()

@@ -7,6 +7,8 @@ import Foreign.C
 import Foreign.Ptr
 import System.Posix.DynamicLinker
 import Control.Monad
+import Control.Exception
+import qualified Data.ByteString.UTF8 as BU8
 
 #include "pkcs11import.h"
 
@@ -18,6 +20,7 @@ import Control.Monad
 
 serialSession = {#const CKF_SERIAL_SESSION#} :: Int
 
+type ObjectHandle = {#type CK_OBJECT_HANDLE#}
 type SlotId = {#type CK_SLOT_ID#}
 type Rv = {#type CK_RV#}
 type CK_BYTE = {#type CK_BYTE#}
@@ -29,6 +32,7 @@ type NotifyFunPtr = {#type CK_NOTIFY#}
 {#pointer *CK_FUNCTION_LIST as FunctionListPtr#}
 {#pointer *CK_INFO as InfoPtr -> Info#}
 {#pointer *CK_SLOT_INFO as SlotInfoPtr -> SlotInfo#}
+{#pointer *CK_ATTRIBUTE as LlAttributePtr -> LlAttribute#}
 
 -- defined this one manually because I don't know how to make c2hs to define it yet
 type GetFunctionListFun = (C2HSImp.Ptr (FunctionListPtr)) -> (IO C2HSImp.CULong)
@@ -140,6 +144,11 @@ openSession' functionListPtr slotId flags =
     return (fromIntegral res, fromIntegral slotId)
 
 
+{#fun unsafe CK_FUNCTION_LIST.C_CloseSession as closeSession'
+ {`FunctionListPtr',
+  `CULong' } -> `Rv' fromIntegral#}
+
+
 {#fun unsafe CK_FUNCTION_LIST.C_Finalize as finalize
  {`FunctionListPtr',
   alloca- `()' } -> `Rv' fromIntegral#}
@@ -153,12 +162,13 @@ getFunctionList getFunctionListPtr =
     return (fromIntegral res, funcListPtr)
 
 
-findObjectsInit functionListPtr session = do
-  res <- {#call unsafe CK_FUNCTION_LIST.C_FindObjectsInit#} functionListPtr session nullPtr (fromIntegral 0)
-  return (fromIntegral res)
+findObjectsInit' functionListPtr session attribs = do
+    _withAttribs attribs $ \attribsPtr -> do
+        res <- {#call unsafe CK_FUNCTION_LIST.C_FindObjectsInit#} functionListPtr session attribsPtr (fromIntegral $ length attribs)
+        return (fromIntegral res)
 
 
-findObjects functionListPtr session maxObjects = do
+findObjects' functionListPtr session maxObjects = do
   alloca $ \arrayLenPtr -> do
     poke arrayLenPtr (fromIntegral 0)
     allocaArray maxObjects $ \array -> do
@@ -168,7 +178,7 @@ findObjects functionListPtr session maxObjects = do
       return (fromIntegral res, objectHandles)
 
 
-{#fun unsafe CK_FUNCTION_LIST.C_FindObjectsFinal as findObjectsFinal
+{#fun unsafe CK_FUNCTION_LIST.C_FindObjectsFinal as findObjectsFinal'
  {`FunctionListPtr',
   `CULong' } -> `Rv' fromIntegral#}
 
@@ -191,6 +201,71 @@ rvToStr {#const CKR_TOKEN_NOT_RECOGNIZED#} = "token not recognized"
 rvToStr {#const CKR_TOKEN_WRITE_PROTECTED#} = "token write protected"
 
 
+-- Attributes
+
+data Attribute = Class Int | KeyType Int | Label String
+
+data LlAttribute = LlAttribute {
+    attributeType :: {#type CK_ATTRIBUTE_TYPE#},
+    attributeValuePtr :: Ptr (),
+    attributeSize :: {#type CK_ULONG#}
+}
+
+instance Storable LlAttribute where
+  sizeOf _ = {#sizeof CK_ATTRIBUTE_TYPE#} + {#sizeof CK_VOID_PTR#} + {#sizeof CK_ULONG#}
+  alignment _ = 1
+  poke p x = do
+    poke (p `plusPtr` 0) (attributeType x)
+    poke (p `plusPtr` {#sizeof CK_ATTRIBUTE_TYPE#}) (attributeValuePtr x :: {#type CK_VOID_PTR#})
+    poke (p `plusPtr` ({#sizeof CK_ATTRIBUTE_TYPE#} + {#sizeof CK_VOID_PTR#})) (attributeSize x)
+
+
+_valueSize :: Attribute -> Int
+_valueSize (Class _) = {#sizeof CK_OBJECT_CLASS#}
+_valueSize (KeyType _) = {#sizeof CK_KEY_TYPE#}
+_valueSize (Label l) = BU8.length $ BU8.fromString l
+
+
+_attrType :: Attribute -> {#type CK_ATTRIBUTE_TYPE#}
+_attrType (Class _) = {#const CKA_CLASS#}
+_attrType (KeyType _) = {#const CKA_KEY_TYPE#}
+_attrType (Label _) = {#const CKA_LABEL#}
+
+
+_pokeValue :: Attribute -> Ptr () -> IO ()
+_pokeValue (Class c) ptr = poke (castPtr ptr :: Ptr {#type CK_OBJECT_CLASS#}) (fromIntegral c :: {#type CK_OBJECT_CLASS#})
+
+
+_pokeValues :: [Attribute] -> Ptr () -> IO ()
+_pokeValues [] p = return ()
+_pokeValues (a:rem) p = do
+    _pokeValue a p
+    _pokeValues rem (p `plusPtr` (_valueSize a))
+
+
+_valuesSize :: [Attribute] -> Int
+_valuesSize attribs = foldr (+) 0 (map (_valueSize) attribs)
+
+
+_makeLowLevelAttrs :: [Attribute] -> Ptr () -> [LlAttribute]
+_makeLowLevelAttrs [] valuePtr = []
+_makeLowLevelAttrs (a:rem) valuePtr =
+    let valuePtr' = valuePtr `plusPtr` (_valueSize a)
+        llAttr = LlAttribute {attributeType=_attrType a, attributeValuePtr=valuePtr, attributeSize=(fromIntegral $ _valueSize a)}
+    in
+        llAttr:(_makeLowLevelAttrs rem valuePtr')
+
+
+_withAttribs :: [Attribute] -> (Ptr LlAttribute -> IO a) -> IO a
+_withAttribs attribs f = do
+    allocaBytes (_valuesSize attribs) $ \valuesPtr -> do
+        _pokeValues attribs valuesPtr
+        allocaArray (length attribs) $ \attrsPtr -> do
+            pokeArray attrsPtr (_makeLowLevelAttrs attribs valuesPtr)
+            f attrsPtr
+
+
+
 -- High level API starts here
 
 
@@ -198,6 +273,9 @@ data Library = Library {
     libraryHandle :: DL,
     functionListPtr :: FunctionListPtr
 }
+
+
+data Session = Session CULong FunctionListPtr
 
 
 loadLibrary :: String -> IO Library
@@ -243,9 +321,56 @@ getSlotInfo (Library _ functionListPtr) slotId = do
         else return slotInfo
 
 
-openSession :: Library -> Int -> Int -> IO Int
-openSession (Library _ functionListPtr) slotId flags = do
+_openSessionEx :: Library -> Int -> Int -> IO Session
+_openSessionEx (Library _ functionListPtr) slotId flags = do
     (rv, sessionHandle) <- openSession' functionListPtr slotId flags
     if rv /= 0
         then fail $ "failed to open slot: " ++ (rvToStr rv)
-        else return sessionHandle
+        else return $ Session sessionHandle functionListPtr
+
+
+_closeSessionEx :: Session -> IO ()
+_closeSessionEx (Session sessionHandle functionListPtr) = do
+    rv <- closeSession' functionListPtr sessionHandle
+    if rv /= 0
+        then fail $ "failed to close slot: " ++ (rvToStr rv)
+        else return ()
+
+
+withSession :: Library -> Int -> Int -> (Session -> IO a) -> IO a
+withSession lib slotId flags f = do
+    bracket
+        (_openSessionEx lib slotId flags)
+        (_closeSessionEx)
+        (f)
+
+
+
+_findObjectsInitEx :: Session -> [Attribute] -> IO ()
+_findObjectsInitEx (Session sessionHandle functionListPtr) attribs = do
+    rv <- findObjectsInit' functionListPtr sessionHandle attribs
+    if rv /= 0
+        then fail $ "failed to initialize search: " ++ (rvToStr rv)
+        else return ()
+
+
+_findObjectsEx :: Session -> IO [ObjectHandle]
+_findObjectsEx (Session sessionHandle functionListPtr) = do
+    (rv, objectsHandles) <- findObjects' functionListPtr sessionHandle 10
+    if rv /= 0
+        then fail $ "failed to execute search: " ++ (rvToStr rv)
+        else return objectsHandles
+
+
+_findObjectsFinalEx :: Session -> IO ()
+_findObjectsFinalEx (Session sessionHandle functionListPtr) = do
+    rv <- findObjectsFinal' functionListPtr sessionHandle
+    if rv /= 0
+        then fail $ "failed to finalize search: " ++ (rvToStr rv)
+        else return ()
+
+
+findObjects :: Session -> [Attribute] -> IO [ObjectHandle]
+findObjects session attribs = do
+    _findObjectsInitEx session attribs
+    finally (_findObjectsEx session) (_findObjectsFinalEx session)
