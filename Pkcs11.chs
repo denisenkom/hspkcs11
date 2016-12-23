@@ -33,6 +33,7 @@ type NotifyFunPtr = {#type CK_NOTIFY#}
 {#pointer *CK_FUNCTION_LIST as FunctionListPtr#}
 {#pointer *CK_INFO as InfoPtr -> Info#}
 {#pointer *CK_SLOT_INFO as SlotInfoPtr -> SlotInfo#}
+{#pointer *CK_TOKEN_INFO as TokenInfoPtr -> TokenInfo#}
 {#pointer *CK_ATTRIBUTE as LlAttributePtr -> LlAttribute#}
 
 -- defined this one manually because I don't know how to make c2hs to define it yet
@@ -112,6 +113,37 @@ instance Storable SlotInfo where
                      }
 
 
+data TokenInfo = TokenInfo {
+    tokenInfoLabel :: String,
+    tokenInfoManufacturerId :: String,
+    tokenInfoModel :: String,
+    tokenInfoSerialNumber :: String,
+    tokenInfoFlags :: Int--,
+    --tokenInfoHardwareVersion :: Version,
+    --tokenInfoFirmwareVersion :: Version
+} deriving (Show)
+
+instance Storable TokenInfo where
+    sizeOf _ = (64+32+4+2+2){-#sizeof CK_INFO#-}
+    alignment _ = 1{-#alignof CK_INFO#-}
+    peek p = do
+        label <- peekCStringLen ((p `plusPtr` 0{-#offsetof CK_SLOT_INFO->slotDescription#-}), 32)
+        manufacturerId <- peekCStringLen ((p `plusPtr` 32{-#offsetof CK_SLOT_INFO->manufacturerID#-}), 32)
+        model <- peekCStringLen ((p `plusPtr` (32+32){-#offsetof CK_SLOT_INFO->manufacturerID#-}), 16)
+        serialNumber <- peekCStringLen ((p `plusPtr` (32+32+16){-#offsetof CK_SLOT_INFO->manufacturerID#-}), 16)
+        flags <- C2HSImp.peekByteOff p (32+32+16+16) :: IO C2HSImp.CULong
+        --hwVer <- peek (p `plusPtr` (64+32+4){-#offsetof CK_SLOT_INFO->hardwareVersion#-}) :: IO Version
+        --fwVer <- peek (p `plusPtr` (64+32+4+2){-#offsetof CK_SLOT_INFO->firmwareVersion#-}) :: IO Version
+        return TokenInfo {tokenInfoLabel=label,
+                          tokenInfoManufacturerId=manufacturerId,
+                          tokenInfoModel=model,
+                          tokenInfoSerialNumber=serialNumber,
+                          tokenInfoFlags=fromIntegral flags--,
+                          --tokenInfoHardwareVersion=hwVer,
+                          --tokenInfoFirmwareVersion=fwVer
+                          }
+
+
 {#fun unsafe CK_FUNCTION_LIST.C_Initialize as initialize
  {`FunctionListPtr',
   alloca- `()' } -> `Rv' fromIntegral#}
@@ -135,6 +167,13 @@ getSlotList' functionListPtr active num = do
   {`FunctionListPtr',
    `Int',
    alloca- `SlotInfo' peek* } -> `Rv' fromIntegral
+#}
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_GetTokenInfo as getTokenInfo'
+  {`FunctionListPtr',
+   `Int',
+   alloca- `TokenInfo' peek* } -> `Rv' fromIntegral
 #}
 
 
@@ -341,6 +380,14 @@ getSlotList (Library _ functionListPtr) active num = do
 getSlotInfo :: Library -> Int -> IO SlotInfo
 getSlotInfo (Library _ functionListPtr) slotId = do
     (rv, slotInfo) <- getSlotInfo' functionListPtr slotId
+    if rv /= 0
+        then fail $ "failed to get slot information " ++ (rvToStr rv)
+        else return slotInfo
+
+
+getTokenInfo :: Library -> Int -> IO TokenInfo
+getTokenInfo (Library _ functionListPtr) slotId = do
+    (rv, slotInfo) <- getTokenInfo' functionListPtr slotId
     if rv /= 0
         then fail $ "failed to get slot information " ++ (rvToStr rv)
         else return slotInfo
