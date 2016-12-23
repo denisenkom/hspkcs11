@@ -35,6 +35,7 @@ type NotifyFunPtr = {#type CK_NOTIFY#}
 {#pointer *CK_SLOT_INFO as SlotInfoPtr -> SlotInfo#}
 {#pointer *CK_TOKEN_INFO as TokenInfoPtr -> TokenInfo#}
 {#pointer *CK_ATTRIBUTE as LlAttributePtr -> LlAttribute#}
+{#pointer *CK_MECHANISM_INFO as MechInfoPtr -> MechInfo#}
 
 -- defined this one manually because I don't know how to make c2hs to define it yet
 type GetFunctionListFun = (C2HSImp.Ptr (FunctionListPtr)) -> (IO C2HSImp.CULong)
@@ -144,6 +145,25 @@ instance Storable TokenInfo where
                           }
 
 
+data MechInfo = MechInfo {
+    mechInfoMinKeySize :: Int,
+    mechInfoMaxKeySize :: Int,
+    mechInfoFlags :: Int
+} deriving (Show)
+
+instance Storable MechInfo where
+  sizeOf _ = {#sizeof CK_MECHANISM_INFO#}
+  alignment _ = 1
+  peek p = MechInfo
+    <$> liftM fromIntegral ({#get CK_MECHANISM_INFO->ulMinKeySize#} p)
+    <*> liftM fromIntegral ({#get CK_MECHANISM_INFO->ulMaxKeySize#} p)
+    <*> liftM fromIntegral ({#get CK_MECHANISM_INFO->flags#} p)
+  poke p x = do
+    {#set CK_MECHANISM_INFO->ulMinKeySize#} p (fromIntegral $ mechInfoMinKeySize x)
+    {#set CK_MECHANISM_INFO->ulMaxKeySize#} p (fromIntegral $ mechInfoMaxKeySize x)
+    {#set CK_MECHANISM_INFO->flags#} p (fromIntegral $ mechInfoFlags x)
+
+
 {#fun unsafe CK_FUNCTION_LIST.C_Initialize as initialize
  {`FunctionListPtr',
   alloca- `()' } -> `Rv' fromIntegral#}
@@ -221,6 +241,26 @@ findObjects' functionListPtr session maxObjects = do
 {#fun unsafe CK_FUNCTION_LIST.C_FindObjectsFinal as findObjectsFinal'
  {`FunctionListPtr',
   `CULong' } -> `Rv' fromIntegral#}
+
+
+_getMechanismList :: FunctionListPtr -> Int -> Int -> IO (Rv, [CULong])
+_getMechanismList functionListPtr slotId maxMechanisms = do
+    alloca $ \arrayLenPtr -> do
+        poke arrayLenPtr (fromIntegral maxMechanisms)
+        allocaArray maxMechanisms $ \array -> do
+            res <- {#call unsafe CK_FUNCTION_LIST.C_GetMechanismList#} functionListPtr (fromIntegral slotId) array arrayLenPtr
+            arrayLen <- peek arrayLenPtr
+            objectHandles <- peekArray (fromIntegral arrayLen) array
+            return (fromIntegral res, objectHandles)
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_GetMechanismInfo as _getMechanismInfo
+  {`FunctionListPtr',
+   `Int',
+   `Int',
+   alloca- `MechInfo' peek* } -> `Rv' fromIntegral
+#}
+
 
 
 rvToStr :: Rv -> String
@@ -389,7 +429,7 @@ getTokenInfo :: Library -> Int -> IO TokenInfo
 getTokenInfo (Library _ functionListPtr) slotId = do
     (rv, slotInfo) <- getTokenInfo' functionListPtr slotId
     if rv /= 0
-        then fail $ "failed to get slot information " ++ (rvToStr rv)
+        then fail $ "failed to get token information " ++ (rvToStr rv)
         else return slotInfo
 
 
@@ -446,3 +486,19 @@ findObjects :: Session -> [Attribute] -> IO [ObjectHandle]
 findObjects session attribs = do
     _findObjectsInitEx session attribs
     finally (_findObjectsEx session) (_findObjectsFinalEx session)
+
+
+getMechanismList :: Library -> Int -> Int -> IO [CULong]
+getMechanismList (Library _ functionListPtr) slotId maxMechanisms = do
+    (rv, types) <- _getMechanismList functionListPtr slotId maxMechanisms
+    if rv /= 0
+        then fail $ "failed to get list of mechanisms: " ++ (rvToStr rv)
+        else return types
+
+
+getMechanismInfo :: Library -> Int -> Int -> IO MechInfo
+getMechanismInfo (Library _ functionListPtr) slotId mechId = do
+    (rv, types) <- _getMechanismInfo functionListPtr slotId mechId
+    if rv /= 0
+        then fail $ "failed to get mechanism information: " ++ (rvToStr rv)
+        else return types

@@ -1,5 +1,6 @@
 import Pkcs11
 
+
 main = do
     lib <- loadLibrary "/Library/Frameworks/eToken.framework/Versions/Current/libeToken.dylib"
     info <- getInfo lib
@@ -15,6 +16,13 @@ main = do
     tokenInfo <- getTokenInfo lib 0
     putStrLn(show tokenInfo)
 
+    putStrLn "getMechanismList"
+    mechanisms <- getMechanismList lib 0 100
+    putStrLn $ show mechanisms
+
+    mechInfo <- getMechanismInfo lib 0 (fromIntegral $ head mechanisms)
+    putStrLn $ show mechInfo
+
     withSession lib 0 serialSession $ \sess -> do
-        objects <- findObjects sess [Class PublicKey, KeyType RSA]
+        objects <- findObjects sess [Class PrivateKey, KeyType RSA]
         putStrLn $ show objects
