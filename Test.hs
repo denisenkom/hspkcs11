@@ -24,5 +24,7 @@ main = do
     putStrLn $ show mechInfo
 
     withSession lib 0 serialSession $ \sess -> do
-        objects <- findObjects sess [Class PrivateKey, KeyType RSA]
+        objects <- findObjects sess [Class PrivateKey, KeyType RSA, ModulusBits 2048]
         putStrLn $ show objects
+        (pubKeyHandle, privKeyHandle) <- generateKeyPair sess rsaPkcsKeyPairGen [ModulusBits 2048] []
+        putStrLn $ show pubKeyHandle

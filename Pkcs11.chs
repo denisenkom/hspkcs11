@@ -20,6 +20,7 @@ import Data.ByteString.Unsafe
 -}
 
 serialSession = {#const CKF_SERIAL_SESSION#} :: Int
+rsaPkcsKeyPairGen = {#const CKM_RSA_PKCS_KEY_PAIR_GEN#} :: Int
 
 type ObjectHandle = {#type CK_OBJECT_HANDLE#}
 type SlotId = {#type CK_SLOT_ID#}
@@ -29,6 +30,7 @@ type CK_FLAGS = {#type CK_FLAGS#}
 type GetFunctionListFunPtr = {#type CK_C_GetFunctionList#}
 type GetSlotListFunPtr = {#type CK_C_GetSlotList#}
 type NotifyFunPtr = {#type CK_NOTIFY#}
+type SessionHandle = {#type CK_SESSION_HANDLE#}
 
 {#pointer *CK_FUNCTION_LIST as FunctionListPtr#}
 {#pointer *CK_INFO as InfoPtr -> Info#}
@@ -36,6 +38,7 @@ type NotifyFunPtr = {#type CK_NOTIFY#}
 {#pointer *CK_TOKEN_INFO as TokenInfoPtr -> TokenInfo#}
 {#pointer *CK_ATTRIBUTE as LlAttributePtr -> LlAttribute#}
 {#pointer *CK_MECHANISM_INFO as MechInfoPtr -> MechInfo#}
+{#pointer *CK_MECHANISM as MechPtr -> Mech#}
 
 -- defined this one manually because I don't know how to make c2hs to define it yet
 type GetFunctionListFun = (C2HSImp.Ptr (FunctionListPtr)) -> (IO C2HSImp.CULong)
@@ -164,6 +167,22 @@ instance Storable MechInfo where
     {#set CK_MECHANISM_INFO->flags#} p (fromIntegral $ mechInfoFlags x)
 
 
+data Mech = Mech {
+    mechType :: Int,
+    mechParamPtr :: Ptr (),
+    mechParamSize :: Int
+}
+
+instance Storable Mech where
+    sizeOf _ = {#sizeof CK_MECHANISM_TYPE#} + {#sizeof CK_VOID_PTR#} + {#sizeof CK_ULONG#}
+    alignment _ = 1
+    poke p x = do
+        poke (p `plusPtr` 0) (mechType x)
+        poke (p `plusPtr` {#sizeof CK_MECHANISM_TYPE#}) (mechParamPtr x :: {#type CK_VOID_PTR#})
+        poke (p `plusPtr` ({#sizeof CK_MECHANISM_TYPE#} + {#sizeof CK_VOID_PTR#})) (mechParamSize x)
+
+
+
 {#fun unsafe CK_FUNCTION_LIST.C_Initialize as initialize
  {`FunctionListPtr',
   alloca- `()' } -> `Rv' fromIntegral#}
@@ -243,6 +262,21 @@ findObjects' functionListPtr session maxObjects = do
   `CULong' } -> `Rv' fromIntegral#}
 
 
+_generateKeyPair :: FunctionListPtr -> SessionHandle -> Int -> [Attribute] -> [Attribute] -> IO (Rv, ObjectHandle, ObjectHandle)
+_generateKeyPair functionListPtr session mechType pubAttrs privAttrs = do
+    alloca $ \pubKeyHandlePtr -> do
+        alloca $ \privKeyHandlePtr -> do
+            alloca $ \mechPtr -> do
+                poke mechPtr (Mech {mechType = mechType, mechParamPtr = nullPtr, mechParamSize = 0})
+                _withAttribs pubAttrs $ \pubAttrsPtr -> do
+                    _withAttribs privAttrs $ \privAttrsPtr -> do
+                        res <- {#call unsafe CK_FUNCTION_LIST.C_GenerateKeyPair#} functionListPtr session mechPtr pubAttrsPtr (fromIntegral $ length pubAttrs) privAttrsPtr (fromIntegral $ length privAttrs) pubKeyHandlePtr privKeyHandlePtr
+                        pubKeyHandle <- peek pubKeyHandlePtr
+                        privKeyHandle <- peek privKeyHandlePtr
+                        return (fromIntegral res, fromIntegral pubKeyHandle, fromIntegral privKeyHandle)
+
+
+
 _getMechanismList :: FunctionListPtr -> Int -> Int -> IO (Rv, [CULong])
 _getMechanismList functionListPtr slotId maxMechanisms = do
     alloca $ \arrayLenPtr -> do
@@ -262,23 +296,38 @@ _getMechanismList functionListPtr slotId maxMechanisms = do
 #}
 
 
-
 rvToStr :: Rv -> String
 rvToStr {#const CKR_OK#} = "ok"
 rvToStr {#const CKR_ARGUMENTS_BAD#} = "bad arguments"
+rvToStr {#const CKR_ATTRIBUTE_READ_ONLY#} = "attribute is read-only"
+rvToStr {#const CKR_ATTRIBUTE_TYPE_INVALID#} = "invalid attribute type specified in template"
+rvToStr {#const CKR_ATTRIBUTE_TYPE_INVALID#} = "invalid attribute value specified in template"
+rvToStr {#const CKR_FUNCTION_CANCELED#} = "function canceled"
 rvToStr {#const CKR_FUNCTION_FAILED#} = "function failed"
 rvToStr {#const CKR_GENERAL_ERROR#} = "general error"
 rvToStr {#const CKR_HOST_MEMORY#} = "host memory"
 rvToStr {#const CKR_CRYPTOKI_NOT_INITIALIZED#} = "cryptoki not initialized"
+rvToStr {#const CKR_DEVICE_ERROR#} = "device error"
 rvToStr {#const CKR_DEVICE_MEMORY#} = "device memory"
 rvToStr {#const CKR_DEVICE_REMOVED#} = "device removed"
+rvToStr {#const CKR_DOMAIN_PARAMS_INVALID#} = "invalid domain parameters"
+rvToStr {#const CKR_MECHANISM_INVALID#} = "invalid mechanism"
+rvToStr {#const CKR_MECHANISM_PARAM_INVALID#} = "invalid mechanism parameter"
+rvToStr {#const CKR_OPERATION_ACTIVE#} = "there is already an active operation in-progress"
+rvToStr {#const CKR_PIN_EXPIRED#} = "PIN is expired, you need to setup a new PIN"
+rvToStr {#const CKR_SESSION_CLOSED#} = "session was closed in a middle of operation"
 rvToStr {#const CKR_SESSION_COUNT#} = "session count"
+rvToStr {#const CKR_SESSION_HANDLE_INVALID#} = "session handle is invalid"
 rvToStr {#const CKR_SESSION_PARALLEL_NOT_SUPPORTED#} = "parallel session not supported"
+rvToStr {#const CKR_SESSION_READ_ONLY#} = "session is read-only"
 rvToStr {#const CKR_SESSION_READ_WRITE_SO_EXISTS#} = "read-write SO session exists"
 rvToStr {#const CKR_SLOT_ID_INVALID#} = "slot id invalid"
+rvToStr {#const CKR_TEMPLATE_INCOMPLETE#} = "provided template is incomplete"
+rvToStr {#const CKR_TEMPLATE_INCONSISTENT#} = "provided template is inconsistent"
 rvToStr {#const CKR_TOKEN_NOT_PRESENT#} = "token not present"
 rvToStr {#const CKR_TOKEN_NOT_RECOGNIZED#} = "token not recognized"
-rvToStr {#const CKR_TOKEN_WRITE_PROTECTED#} = "token write protected"
+rvToStr {#const CKR_TOKEN_WRITE_PROTECTED#} = "token is write protected"
+rvToStr {#const CKR_USER_NOT_LOGGED_IN#} = "user needs to be logged in to perform this operation"
 
 
 -- Attributes
@@ -286,7 +335,7 @@ rvToStr {#const CKR_TOKEN_WRITE_PROTECTED#} = "token write protected"
 data ClassType = Data | Certificate | PublicKey | PrivateKey | SecretKey | HWFeature | DomainParameters | Mechanism
 data KeyTypeType = RSA | DSA | DH | ECDSA | EC
 
-data Attribute = Class ClassType | KeyType KeyTypeType | Label String
+data Attribute = Class ClassType | KeyType KeyTypeType | Label String | ModulusBits Int
 
 data LlAttribute = LlAttribute {
     attributeType :: {#type CK_ATTRIBUTE_TYPE#},
@@ -326,18 +375,21 @@ _attrType :: Attribute -> {#type CK_ATTRIBUTE_TYPE#}
 _attrType (Class _) = {#const CKA_CLASS#}
 _attrType (KeyType _) = {#const CKA_KEY_TYPE#}
 _attrType (Label _) = {#const CKA_LABEL#}
+_attrType (ModulusBits _) = {#const CKA_MODULUS_BITS#}
 
 
 _valueSize :: Attribute -> Int
 _valueSize (Class _) = {#sizeof CK_OBJECT_CLASS#}
 _valueSize (KeyType _) = {#sizeof CK_KEY_TYPE#}
 _valueSize (Label l) = BU8.length $ BU8.fromString l
+_valueSize (ModulusBits _) = {#sizeof CK_ULONG#}
 
 
 _pokeValue :: Attribute -> Ptr () -> IO ()
 _pokeValue (Class c) ptr = poke (castPtr ptr :: Ptr {#type CK_OBJECT_CLASS#}) (_classTypeVal c :: {#type CK_OBJECT_CLASS#})
 _pokeValue (KeyType k) ptr = poke (castPtr ptr :: Ptr {#type CK_KEY_TYPE#}) (_keyTypeVal k :: {#type CK_KEY_TYPE#})
 _pokeValue (Label l) ptr = unsafeUseAsCStringLen (BU8.fromString l) $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
+_pokeValue (ModulusBits l) ptr = poke (castPtr ptr :: Ptr {#type CK_ULONG#}) (fromIntegral l :: {#type CK_KEY_TYPE#})
 
 
 _pokeValues :: [Attribute] -> Ptr () -> IO ()
@@ -379,7 +431,7 @@ data Library = Library {
 }
 
 
-data Session = Session CULong FunctionListPtr
+data Session = Session SessionHandle FunctionListPtr
 
 
 loadLibrary :: String -> IO Library
@@ -486,6 +538,15 @@ findObjects :: Session -> [Attribute] -> IO [ObjectHandle]
 findObjects session attribs = do
     _findObjectsInitEx session attribs
     finally (_findObjectsEx session) (_findObjectsFinalEx session)
+
+
+generateKeyPair :: Session -> Int -> [Attribute] -> [Attribute] -> IO (ObjectHandle, ObjectHandle)
+generateKeyPair (Session sessionHandle functionListPtr) mechType pubKeyAttrs privKeyAttrs = do
+    (rv, pubKeyHandle, privKeyHandle) <- _generateKeyPair functionListPtr sessionHandle mechType pubKeyAttrs privKeyAttrs
+    if rv /= 0
+        then fail $ "failed to generate key pair: " ++ (rvToStr rv)
+        else return (pubKeyHandle, privKeyHandle)
+
 
 
 getMechanismList :: Library -> Int -> Int -> IO [CULong]
