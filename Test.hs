@@ -4,9 +4,9 @@ import Pkcs11
 
 generateKey :: Library -> BU8.ByteString -> String -> IO (ObjectHandle, ObjectHandle)
 generateKey lib pin label = do
-    withSession lib 0 serialSession $ \sess -> do
+    withSession lib 0 rwSession $ \sess -> do
         login sess User pin
-        generateKeyPair sess rsaPkcsKeyPairGen [ModulusBits 2048, Label label] [Label label]
+        generateKeyPair sess rsaPkcsKeyPairGen [ModulusBits 2048, Label label] [Label label, Token True]
 
 
 
@@ -32,10 +32,10 @@ main = do
     mechInfo <- getMechanismInfo lib 0 (fromIntegral $ head mechanisms)
     putStrLn $ show mechInfo
 
-    withSession lib 0 serialSession $ \sess -> do
-        objects <- findObjects sess [Class PrivateKey, KeyType RSA, ModulusBits 2048]
+    withSession lib 0 0 $ \sess -> do
+        objects <- findObjects sess []
         putStrLn $ show objects
 
-    putStrLn "generating key"
-    (pubKeyHandle, privKeyHandle) <- generateKey lib (BU8.fromString "123abc_") "key"
-    putStrLn (show pubKeyHandle)
+    --putStrLn "generating key"
+    --(pubKeyHandle, privKeyHandle) <- generateKey lib (BU8.fromString "123abc_") "key"
+    --putStrLn (show pubKeyHandle)

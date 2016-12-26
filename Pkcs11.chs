@@ -19,7 +19,9 @@ import Data.ByteString.Unsafe
  https://github.com/haskell/c2hs/issues/172
 -}
 
-serialSession = {#const CKF_SERIAL_SESSION#} :: Int
+_serialSession = {#const CKF_SERIAL_SESSION#} :: Int
+rwSession = {#const CKF_RW_SESSION#} :: Int
+
 rsaPkcsKeyPairGen = {#const CKM_RSA_PKCS_KEY_PAIR_GEN#} :: Int
 
 type ObjectHandle = {#type CK_OBJECT_HANDLE#}
@@ -262,7 +264,7 @@ findObjects' functionListPtr session maxObjects = do
   `CULong' } -> `Rv' fromIntegral#}
 
 
-{#enum define UserType {CKU_USER as User, CKU_SO as SecurityOfficer, CKU_CONTEXT_SPECIFIC as ContextSpecific} deriving (Eq,Ord) #}
+{#enum define UserType {CKU_USER as User, CKU_SO as SecurityOfficer, CKU_CONTEXT_SPECIFIC as ContextSpecific} deriving (Eq) #}
 
 
 _login :: FunctionListPtr -> SessionHandle -> UserType -> BU8.ByteString -> IO (Rv)
@@ -351,10 +353,26 @@ rvToStr {#const CKR_USER_TYPE_INVALID#} = "invalid value for user type"
 
 -- Attributes
 
-data ClassType = Data | Certificate | PublicKey | PrivateKey | SecretKey | HWFeature | DomainParameters | Mechanism
-data KeyTypeType = RSA | DSA | DH | ECDSA | EC
+{#enum define ClassType {
+    CKO_DATA as Data,
+    CKO_CERTIFICATE as Certificate,
+    CKO_PUBLIC_KEY as PublicKey,
+    CKO_PRIVATE_KEY as PrivateKey,
+    CKO_SECRET_KEY as SecretKey,
+    CKO_HW_FEATURE as HWFeature,
+    CKO_DOMAIN_PARAMETERS as DomainParameters,
+    CKO_MECHANISM as Mechanism
+} deriving (Eq)
+#}
 
-data Attribute = Class ClassType | KeyType KeyTypeType | Label String | ModulusBits Int
+{#enum define KeyTypeType {
+    CKK_RSA as RSA,
+    CKK_DSA as DSA,
+    CKK_DH as DH,
+    CKK_ECDSA as ECDSA,
+    CKK_EC as EC} deriving (Eq) #}
+
+data Attribute = Class ClassType | KeyType KeyTypeType | Label String | ModulusBits Int | Token Bool
 
 data LlAttribute = LlAttribute {
     attributeType :: {#type CK_ATTRIBUTE_TYPE#},
@@ -371,30 +389,12 @@ instance Storable LlAttribute where
     poke (p `plusPtr` ({#sizeof CK_ATTRIBUTE_TYPE#} + {#sizeof CK_VOID_PTR#})) (attributeSize x)
 
 
-_classTypeVal :: ClassType -> {#type CK_OBJECT_CLASS#}
-_classTypeVal Data = {#const CKO_DATA#}
-_classTypeVal Certificate = {#const CKO_CERTIFICATE#}
-_classTypeVal PublicKey = {#const CKO_PUBLIC_KEY#}
-_classTypeVal PrivateKey = {#const CKO_PRIVATE_KEY#}
-_classTypeVal SecretKey = {#const CKO_SECRET_KEY#}
-_classTypeVal HWFeature = {#const CKO_HW_FEATURE#}
-_classTypeVal DomainParameters = {#const CKO_DOMAIN_PARAMETERS#}
-_classTypeVal Mechanism = {#const CKO_MECHANISM#}
-
-
-_keyTypeVal :: KeyTypeType -> {#type CK_KEY_TYPE#}
-_keyTypeVal RSA = {#const CKK_RSA#}
-_keyTypeVal DSA = {#const CKK_DSA#}
-_keyTypeVal DH = {#const CKK_DH#}
-_keyTypeVal ECDSA = {#const CKK_ECDSA#}
-_keyTypeVal EC = {#const CKK_EC#}
-
-
 _attrType :: Attribute -> {#type CK_ATTRIBUTE_TYPE#}
 _attrType (Class _) = {#const CKA_CLASS#}
 _attrType (KeyType _) = {#const CKA_KEY_TYPE#}
 _attrType (Label _) = {#const CKA_LABEL#}
 _attrType (ModulusBits _) = {#const CKA_MODULUS_BITS#}
+_attrType (Token _) = {#const CKA_TOKEN#}
 
 
 _valueSize :: Attribute -> Int
@@ -402,13 +402,15 @@ _valueSize (Class _) = {#sizeof CK_OBJECT_CLASS#}
 _valueSize (KeyType _) = {#sizeof CK_KEY_TYPE#}
 _valueSize (Label l) = BU8.length $ BU8.fromString l
 _valueSize (ModulusBits _) = {#sizeof CK_ULONG#}
+_valueSize (Token _) = {#sizeof CK_BBOOL#}
 
 
 _pokeValue :: Attribute -> Ptr () -> IO ()
-_pokeValue (Class c) ptr = poke (castPtr ptr :: Ptr {#type CK_OBJECT_CLASS#}) (_classTypeVal c :: {#type CK_OBJECT_CLASS#})
-_pokeValue (KeyType k) ptr = poke (castPtr ptr :: Ptr {#type CK_KEY_TYPE#}) (_keyTypeVal k :: {#type CK_KEY_TYPE#})
+_pokeValue (Class c) ptr = poke (castPtr ptr :: Ptr {#type CK_OBJECT_CLASS#}) (fromIntegral $ fromEnum c)
+_pokeValue (KeyType k) ptr = poke (castPtr ptr :: Ptr {#type CK_KEY_TYPE#}) (fromIntegral $ fromEnum k)
 _pokeValue (Label l) ptr = unsafeUseAsCStringLen (BU8.fromString l) $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
 _pokeValue (ModulusBits l) ptr = poke (castPtr ptr :: Ptr {#type CK_ULONG#}) (fromIntegral l :: {#type CK_KEY_TYPE#})
+_pokeValue (Token b) ptr = poke (castPtr ptr :: Ptr {#type CK_BBOOL#}) (fromBool b :: {#type CK_BBOOL#})
 
 
 _pokeValues :: [Attribute] -> Ptr () -> IO ()
@@ -438,7 +440,6 @@ _withAttribs attribs f = do
         allocaArray (length attribs) $ \attrsPtr -> do
             pokeArray attrsPtr (_makeLowLevelAttrs attribs valuesPtr)
             f attrsPtr
-
 
 
 -- High level API starts here
@@ -523,7 +524,7 @@ _closeSessionEx (Session sessionHandle functionListPtr) = do
 withSession :: Library -> Int -> Int -> (Session -> IO a) -> IO a
 withSession lib slotId flags f = do
     bracket
-        (_openSessionEx lib slotId flags)
+        (_openSessionEx lib slotId (flags .|. _serialSession))
         (_closeSessionEx)
         (f)
 
@@ -565,6 +566,12 @@ generateKeyPair (Session sessionHandle functionListPtr) mechType pubKeyAttrs pri
     if rv /= 0
         then fail $ "failed to generate key pair: " ++ (rvToStr rv)
         else return (pubKeyHandle, privKeyHandle)
+
+
+--getObjectAttr :: Session -> ObjectHandle -> Attribute -> IO Atrribute
+--getObjectAttr (Session sessionHandle functionListPtr) objHandle attr = do
+--    res <- {#call unsafe CK_FUNCTION_LIST.C_GenerateKeyPair#} functionListPtr session mechPtr pubAttrsPtr (fromIntegral $ length pubAttrs) privAttrsPtr (fromIntegral $ length privAttrs) pubKeyHandlePtr privKeyHandlePtr
+
 
 
 login :: Session -> UserType -> BU8.ByteString -> IO ()
