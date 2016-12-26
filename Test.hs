@@ -34,10 +34,12 @@ main = do
 
     withSession lib 0 0 $ \sess -> do
         login sess User (BU8.fromString "123abc_")
-        objects <- findObjects sess [Class PrivateKey]
+        objects <- findObjects sess [Class PrivateKey, Label "key"]
         putStrLn $ show objects
-        attr <- getObjectAttr sess (head objects) ClassType
-        putStrLn $ show attr
+        mod <- getObjectAttr sess (head objects) ModulusType
+        pubExp <- getObjectAttr sess (head objects) PublicExponentType
+        putStrLn $ show mod
+        putStrLn $ show pubExp
 
     --putStrLn "generating key"
     --(pubKeyHandle, privKeyHandle) <- generateKey lib (BU8.fromString "123abc_") "key"

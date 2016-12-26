@@ -72,16 +72,16 @@ data Info = Info {
 } deriving (Show)
 
 instance Storable Info where
-  sizeOf _ = (2+32+4+32+10+2){-#sizeof CK_INFO#-}
-  alignment _ = 1{-#alignof CK_INFO#-}
+  sizeOf _ = (2+32+4+32+10+2)
+  alignment _ = 1
   peek p = do
     ver <- peek (p `plusPtr` {#offsetof CK_INFO->cryptokiVersion#}) :: IO Version
-    manufacturerId <- peekCStringLen ((p `plusPtr` 2{-#offsetof CK_INFO->manufacturerID#-}), 32)
+    manufacturerId <- peekCStringLen ((p `plusPtr` 2), 32)
     flags <- (\ptr -> do {C2HSImp.peekByteOff ptr (2+32) :: IO C2HSImp.CULong}) p
     --flags <- {#get CK_INFO->flags#} p
-    libraryDescription <- peekCStringLen ((p `plusPtr` (2+32+4+10){-#offsetof CK_INFO->libraryDescription#-}), 32)
+    libraryDescription <- peekCStringLen ((p `plusPtr` (2+32+4+10)), 32)
     --libraryDescription <- {# get CK_INFO->libraryDescription #} p
-    libVer <- peek (p `plusPtr` (2+32+4+32+10){-#offsetof CK_INFO->libraryVersion#-}) :: IO Version
+    libVer <- peek (p `plusPtr` (2+32+4+32+10)) :: IO Version
     return Info {infoCryptokiVersion=ver,
                  infoManufacturerId=manufacturerId,
                  infoFlags=fromIntegral flags,
@@ -103,14 +103,14 @@ data SlotInfo = SlotInfo {
 } deriving (Show)
 
 instance Storable SlotInfo where
-  sizeOf _ = (64+32+4+2+2){-#sizeof CK_INFO#-}
-  alignment _ = 1{-#alignof CK_INFO#-}
+  sizeOf _ = (64+32+4+2+2)
+  alignment _ = 1
   peek p = do
-    description <- peekCStringLen ((p `plusPtr` 0{-#offsetof CK_SLOT_INFO->slotDescription#-}), 64)
-    manufacturerId <- peekCStringLen ((p `plusPtr` 64{-#offsetof CK_SLOT_INFO->manufacturerID#-}), 32)
+    description <- peekCStringLen ((p `plusPtr` 0), 64)
+    manufacturerId <- peekCStringLen ((p `plusPtr` 64), 32)
     flags <- C2HSImp.peekByteOff p (64+32) :: IO C2HSImp.CULong
-    hwVer <- peek (p `plusPtr` (64+32+4){-#offsetof CK_SLOT_INFO->hardwareVersion#-}) :: IO Version
-    fwVer <- peek (p `plusPtr` (64+32+4+2){-#offsetof CK_SLOT_INFO->firmwareVersion#-}) :: IO Version
+    hwVer <- peek (p `plusPtr` (64+32+4)) :: IO Version
+    fwVer <- peek (p `plusPtr` (64+32+4+2)) :: IO Version
     return SlotInfo {slotInfoDescription=description,
                      slotInfoManufacturerId=manufacturerId,
                      slotInfoFlags=fromIntegral flags,
@@ -130,16 +130,16 @@ data TokenInfo = TokenInfo {
 } deriving (Show)
 
 instance Storable TokenInfo where
-    sizeOf _ = (64+32+4+2+2){-#sizeof CK_INFO#-}
-    alignment _ = 1{-#alignof CK_INFO#-}
+    sizeOf _ = (64+32+4+2+2)
+    alignment _ = 1
     peek p = do
-        label <- peekCStringLen ((p `plusPtr` 0{-#offsetof CK_SLOT_INFO->slotDescription#-}), 32)
-        manufacturerId <- peekCStringLen ((p `plusPtr` 32{-#offsetof CK_SLOT_INFO->manufacturerID#-}), 32)
-        model <- peekCStringLen ((p `plusPtr` (32+32){-#offsetof CK_SLOT_INFO->manufacturerID#-}), 16)
-        serialNumber <- peekCStringLen ((p `plusPtr` (32+32+16){-#offsetof CK_SLOT_INFO->manufacturerID#-}), 16)
+        label <- peekCStringLen ((p `plusPtr` 0), 32)
+        manufacturerId <- peekCStringLen ((p `plusPtr` 32), 32)
+        model <- peekCStringLen ((p `plusPtr` (32+32)), 16)
+        serialNumber <- peekCStringLen ((p `plusPtr` (32+32+16)), 16)
         flags <- C2HSImp.peekByteOff p (32+32+16+16) :: IO C2HSImp.CULong
-        --hwVer <- peek (p `plusPtr` (64+32+4){-#offsetof CK_SLOT_INFO->hardwareVersion#-}) :: IO Version
-        --fwVer <- peek (p `plusPtr` (64+32+4+2){-#offsetof CK_SLOT_INFO->firmwareVersion#-}) :: IO Version
+        --hwVer <- peek (p `plusPtr` (64+32+4)) :: IO Version
+        --fwVer <- peek (p `plusPtr` (64+32+4+2)) :: IO Version
         return TokenInfo {tokenInfoLabel=label,
                           tokenInfoManufacturerId=manufacturerId,
                           tokenInfoModel=model,
@@ -313,7 +313,7 @@ rvToStr {#const CKR_OK#} = "ok"
 rvToStr {#const CKR_ARGUMENTS_BAD#} = "bad arguments"
 rvToStr {#const CKR_ATTRIBUTE_READ_ONLY#} = "attribute is read-only"
 rvToStr {#const CKR_ATTRIBUTE_TYPE_INVALID#} = "invalid attribute type specified in template"
-rvToStr {#const CKR_ATTRIBUTE_TYPE_INVALID#} = "invalid attribute value specified in template"
+rvToStr {#const CKR_ATTRIBUTE_VALUE_INVALID#} = "invalid attribute value specified in template"
 rvToStr {#const CKR_CRYPTOKI_NOT_INITIALIZED#} = "cryptoki not initialized"
 rvToStr {#const CKR_DEVICE_ERROR#} = "device error"
 rvToStr {#const CKR_DEVICE_MEMORY#} = "device memory"
@@ -377,9 +377,24 @@ rvToStr {#const CKR_USER_TYPE_INVALID#} = "invalid value for user type"
     CKA_KEY_TYPE as KeyTypeType,
     CKA_LABEL as LabelType,
     CKA_MODULUS_BITS as ModulusBitsType,
+    CKA_MODULUS as ModulusType,
+    CKA_PUBLIC_EXPONENT as PublicExponentType,
+    CKA_PRIVATE_EXPONENT as PrivateExponentType,
+    CKA_PRIME_1 as Prime1Type,
+    CKA_PRIME_2 as Prime2Type,
+    CKA_EXPONENT_1 as Exponent1Type,
+    CKA_EXPONENT_2 as Exponent2Type,
+    CKA_COEFFICIENT as CoefficientType,
     CKA_TOKEN as TokenType} deriving (Show, Eq) #}
 
-data Attribute = Class ClassType | KeyType KeyTypeValue | Label String | ModulusBits Int | Token Bool deriving (Show)
+data Attribute = Class ClassType
+    | KeyType KeyTypeValue
+    | Label String
+    | ModulusBits Int
+    | Token Bool
+    | Modulus Integer
+    | PublicExponent Integer
+    deriving (Show)
 
 data LlAttribute = LlAttribute {
     attributeType :: AttributeType,
@@ -454,10 +469,22 @@ _withAttribs attribs f = do
             f attrsPtr
 
 
+_peekBigInt :: Ptr () -> CULong -> IO Integer
+_peekBigInt ptr len = do
+    arr <- peekArray (fromIntegral len) (castPtr ptr :: Ptr Word8)
+    return $ foldr (\v acc -> (fromIntegral v) + (acc `shiftL` 8)) 0 arr
+
+
 _llAttrToAttr :: LlAttribute -> IO Attribute
 _llAttrToAttr (LlAttribute ClassType ptr len) = do
     val <- peek (castPtr ptr :: Ptr {#type CK_OBJECT_CLASS#})
     return (Class $ toEnum $ fromIntegral val)
+_llAttrToAttr (LlAttribute ModulusType ptr len) = do
+    val <- _peekBigInt ptr len
+    return (Modulus val)
+_llAttrToAttr (LlAttribute PublicExponentType ptr len) = do
+    val <- _peekBigInt ptr len
+    return (PublicExponent val)
 
 
 -- High level API starts here
