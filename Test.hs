@@ -33,8 +33,11 @@ main = do
     putStrLn $ show mechInfo
 
     withSession lib 0 0 $ \sess -> do
-        objects <- findObjects sess []
+        login sess User (BU8.fromString "123abc_")
+        objects <- findObjects sess [Class PrivateKey]
         putStrLn $ show objects
+        attr <- getObjectAttr sess (head objects) ClassType
+        putStrLn $ show attr
 
     --putStrLn "generating key"
     --(pubKeyHandle, privKeyHandle) <- generateKey lib (BU8.fromString "123abc_") "key"

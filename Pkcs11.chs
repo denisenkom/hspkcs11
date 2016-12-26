@@ -362,39 +362,51 @@ rvToStr {#const CKR_USER_TYPE_INVALID#} = "invalid value for user type"
     CKO_HW_FEATURE as HWFeature,
     CKO_DOMAIN_PARAMETERS as DomainParameters,
     CKO_MECHANISM as Mechanism
-} deriving (Eq)
+} deriving (Show, Eq)
 #}
 
-{#enum define KeyTypeType {
+{#enum define KeyTypeValue {
     CKK_RSA as RSA,
     CKK_DSA as DSA,
     CKK_DH as DH,
     CKK_ECDSA as ECDSA,
-    CKK_EC as EC} deriving (Eq) #}
+    CKK_EC as EC} deriving (Show, Eq) #}
 
-data Attribute = Class ClassType | KeyType KeyTypeType | Label String | ModulusBits Int | Token Bool
+{#enum define AttributeType {
+    CKA_CLASS as ClassType,
+    CKA_KEY_TYPE as KeyTypeType,
+    CKA_LABEL as LabelType,
+    CKA_MODULUS_BITS as ModulusBitsType,
+    CKA_TOKEN as TokenType} deriving (Show, Eq) #}
+
+data Attribute = Class ClassType | KeyType KeyTypeValue | Label String | ModulusBits Int | Token Bool deriving (Show)
 
 data LlAttribute = LlAttribute {
-    attributeType :: {#type CK_ATTRIBUTE_TYPE#},
+    attributeType :: AttributeType,
     attributeValuePtr :: Ptr (),
     attributeSize :: {#type CK_ULONG#}
 }
 
 instance Storable LlAttribute where
-  sizeOf _ = {#sizeof CK_ATTRIBUTE_TYPE#} + {#sizeof CK_VOID_PTR#} + {#sizeof CK_ULONG#}
-  alignment _ = 1
-  poke p x = do
-    poke (p `plusPtr` 0) (attributeType x)
-    poke (p `plusPtr` {#sizeof CK_ATTRIBUTE_TYPE#}) (attributeValuePtr x :: {#type CK_VOID_PTR#})
-    poke (p `plusPtr` ({#sizeof CK_ATTRIBUTE_TYPE#} + {#sizeof CK_VOID_PTR#})) (attributeSize x)
+    sizeOf _ = {#sizeof CK_ATTRIBUTE_TYPE#} + {#sizeof CK_VOID_PTR#} + {#sizeof CK_ULONG#}
+    alignment _ = 1
+    poke p x = do
+        poke (p `plusPtr` 0) (fromEnum $ attributeType x)
+        poke (p `plusPtr` {#sizeof CK_ATTRIBUTE_TYPE#}) (attributeValuePtr x :: {#type CK_VOID_PTR#})
+        poke (p `plusPtr` ({#sizeof CK_ATTRIBUTE_TYPE#} + {#sizeof CK_VOID_PTR#})) (attributeSize x)
+    peek p = do
+        attrType <- peek (p `plusPtr` 0) :: IO {#type CK_ATTRIBUTE_TYPE#}
+        valPtr <- peek (p `plusPtr` {#sizeof CK_ATTRIBUTE_TYPE#})
+        valSize <- peek (p `plusPtr` ({#sizeof CK_ATTRIBUTE_TYPE#} + {#sizeof CK_VOID_PTR#}))
+        return $ LlAttribute (toEnum $ fromIntegral attrType) valPtr valSize
 
 
-_attrType :: Attribute -> {#type CK_ATTRIBUTE_TYPE#}
-_attrType (Class _) = {#const CKA_CLASS#}
-_attrType (KeyType _) = {#const CKA_KEY_TYPE#}
-_attrType (Label _) = {#const CKA_LABEL#}
-_attrType (ModulusBits _) = {#const CKA_MODULUS_BITS#}
-_attrType (Token _) = {#const CKA_TOKEN#}
+_attrType :: Attribute -> AttributeType
+_attrType (Class _) = ClassType
+_attrType (KeyType _) = KeyTypeType
+_attrType (Label _) = LabelType
+_attrType (ModulusBits _) = ModulusBitsType
+_attrType (Token _) = TokenType
 
 
 _valueSize :: Attribute -> Int
@@ -440,6 +452,12 @@ _withAttribs attribs f = do
         allocaArray (length attribs) $ \attrsPtr -> do
             pokeArray attrsPtr (_makeLowLevelAttrs attribs valuesPtr)
             f attrsPtr
+
+
+_llAttrToAttr :: LlAttribute -> IO Attribute
+_llAttrToAttr (LlAttribute ClassType ptr len) = do
+    val <- peek (castPtr ptr :: Ptr {#type CK_OBJECT_CLASS#})
+    return (Class $ toEnum $ fromIntegral val)
 
 
 -- High level API starts here
@@ -568,10 +586,20 @@ generateKeyPair (Session sessionHandle functionListPtr) mechType pubKeyAttrs pri
         else return (pubKeyHandle, privKeyHandle)
 
 
---getObjectAttr :: Session -> ObjectHandle -> Attribute -> IO Atrribute
---getObjectAttr (Session sessionHandle functionListPtr) objHandle attr = do
---    res <- {#call unsafe CK_FUNCTION_LIST.C_GenerateKeyPair#} functionListPtr session mechPtr pubAttrsPtr (fromIntegral $ length pubAttrs) privAttrsPtr (fromIntegral $ length privAttrs) pubKeyHandlePtr privKeyHandlePtr
-
+getObjectAttr :: Session -> ObjectHandle -> AttributeType -> IO Attribute
+getObjectAttr (Session sessionHandle functionListPtr) objHandle attrType = do
+    alloca $ \attrPtr -> do
+        poke attrPtr (LlAttribute attrType nullPtr 0)
+        rv <- {#call unsafe CK_FUNCTION_LIST.C_GetAttributeValue#} functionListPtr sessionHandle objHandle attrPtr 1
+        attrWithLen <- peek attrPtr
+        allocaBytes (fromIntegral $ attributeSize attrWithLen) $ \attrVal -> do
+            poke attrPtr (LlAttribute attrType attrVal (attributeSize attrWithLen))
+            rv <- {#call unsafe CK_FUNCTION_LIST.C_GetAttributeValue#} functionListPtr sessionHandle objHandle attrPtr 1
+            if rv /= 0
+                then fail $ "failed to get attribute: " ++ (rvToStr rv)
+                else do
+                    llAttr <- peek attrPtr
+                    _llAttrToAttr llAttr
 
 
 login :: Session -> UserType -> BU8.ByteString -> IO ()
