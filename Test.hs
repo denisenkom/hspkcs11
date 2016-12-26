@@ -1,4 +1,13 @@
+import qualified Data.ByteString.UTF8 as BU8
 import Pkcs11
+
+
+generateKey :: Library -> BU8.ByteString -> String -> IO (ObjectHandle, ObjectHandle)
+generateKey lib pin label = do
+    withSession lib 0 serialSession $ \sess -> do
+        login sess User pin
+        generateKeyPair sess rsaPkcsKeyPairGen [ModulusBits 2048, Label label] [Label label]
+
 
 
 main = do
@@ -26,5 +35,7 @@ main = do
     withSession lib 0 serialSession $ \sess -> do
         objects <- findObjects sess [Class PrivateKey, KeyType RSA, ModulusBits 2048]
         putStrLn $ show objects
-        (pubKeyHandle, privKeyHandle) <- generateKeyPair sess rsaPkcsKeyPairGen [ModulusBits 2048] []
-        putStrLn $ show pubKeyHandle
+
+    putStrLn "generating key"
+    (pubKeyHandle, privKeyHandle) <- generateKey lib (BU8.fromString "123abc_") "key"
+    putStrLn (show pubKeyHandle)

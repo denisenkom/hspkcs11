@@ -262,6 +262,16 @@ findObjects' functionListPtr session maxObjects = do
   `CULong' } -> `Rv' fromIntegral#}
 
 
+{#enum define UserType {CKU_USER as User, CKU_SO as SecurityOfficer, CKU_CONTEXT_SPECIFIC as ContextSpecific} deriving (Eq,Ord) #}
+
+
+_login :: FunctionListPtr -> SessionHandle -> UserType -> BU8.ByteString -> IO (Rv)
+_login functionListPtr session userType pin = do
+    unsafeUseAsCStringLen pin $ \(pinPtr, pinLen) -> do
+        res <- {#call unsafe CK_FUNCTION_LIST.C_Login#} functionListPtr session (fromIntegral $ fromEnum userType) (castPtr pinPtr) (fromIntegral pinLen)
+        return (fromIntegral res)
+
+
 _generateKeyPair :: FunctionListPtr -> SessionHandle -> Int -> [Attribute] -> [Attribute] -> IO (Rv, ObjectHandle, ObjectHandle)
 _generateKeyPair functionListPtr session mechType pubAttrs privAttrs = do
     alloca $ \pubKeyHandlePtr -> do
@@ -302,24 +312,28 @@ rvToStr {#const CKR_ARGUMENTS_BAD#} = "bad arguments"
 rvToStr {#const CKR_ATTRIBUTE_READ_ONLY#} = "attribute is read-only"
 rvToStr {#const CKR_ATTRIBUTE_TYPE_INVALID#} = "invalid attribute type specified in template"
 rvToStr {#const CKR_ATTRIBUTE_TYPE_INVALID#} = "invalid attribute value specified in template"
-rvToStr {#const CKR_FUNCTION_CANCELED#} = "function canceled"
-rvToStr {#const CKR_FUNCTION_FAILED#} = "function failed"
-rvToStr {#const CKR_GENERAL_ERROR#} = "general error"
-rvToStr {#const CKR_HOST_MEMORY#} = "host memory"
 rvToStr {#const CKR_CRYPTOKI_NOT_INITIALIZED#} = "cryptoki not initialized"
 rvToStr {#const CKR_DEVICE_ERROR#} = "device error"
 rvToStr {#const CKR_DEVICE_MEMORY#} = "device memory"
 rvToStr {#const CKR_DEVICE_REMOVED#} = "device removed"
 rvToStr {#const CKR_DOMAIN_PARAMS_INVALID#} = "invalid domain parameters"
+rvToStr {#const CKR_FUNCTION_CANCELED#} = "function canceled"
+rvToStr {#const CKR_FUNCTION_FAILED#} = "function failed"
+rvToStr {#const CKR_GENERAL_ERROR#} = "general error"
+rvToStr {#const CKR_HOST_MEMORY#} = "host memory"
 rvToStr {#const CKR_MECHANISM_INVALID#} = "invalid mechanism"
 rvToStr {#const CKR_MECHANISM_PARAM_INVALID#} = "invalid mechanism parameter"
 rvToStr {#const CKR_OPERATION_ACTIVE#} = "there is already an active operation in-progress"
+rvToStr {#const CKR_OPERATION_NOT_INITIALIZED#} = "operation was not initialized"
 rvToStr {#const CKR_PIN_EXPIRED#} = "PIN is expired, you need to setup a new PIN"
+rvToStr {#const CKR_PIN_INCORRECT#} = "PIN is incorrect, authentication failed"
+rvToStr {#const CKR_PIN_LOCKED#} = "PIN is locked, authentication failed"
 rvToStr {#const CKR_SESSION_CLOSED#} = "session was closed in a middle of operation"
 rvToStr {#const CKR_SESSION_COUNT#} = "session count"
 rvToStr {#const CKR_SESSION_HANDLE_INVALID#} = "session handle is invalid"
 rvToStr {#const CKR_SESSION_PARALLEL_NOT_SUPPORTED#} = "parallel session not supported"
 rvToStr {#const CKR_SESSION_READ_ONLY#} = "session is read-only"
+rvToStr {#const CKR_SESSION_READ_ONLY_EXISTS#} = "read-only session exists, SO cannot login"
 rvToStr {#const CKR_SESSION_READ_WRITE_SO_EXISTS#} = "read-write SO session exists"
 rvToStr {#const CKR_SLOT_ID_INVALID#} = "slot id invalid"
 rvToStr {#const CKR_TEMPLATE_INCOMPLETE#} = "provided template is incomplete"
@@ -328,6 +342,11 @@ rvToStr {#const CKR_TOKEN_NOT_PRESENT#} = "token not present"
 rvToStr {#const CKR_TOKEN_NOT_RECOGNIZED#} = "token not recognized"
 rvToStr {#const CKR_TOKEN_WRITE_PROTECTED#} = "token is write protected"
 rvToStr {#const CKR_USER_NOT_LOGGED_IN#} = "user needs to be logged in to perform this operation"
+rvToStr {#const CKR_USER_ALREADY_LOGGED_IN#} = "user already logged in"
+rvToStr {#const CKR_USER_ANOTHER_ALREADY_LOGGED_IN#} = "another user already logged in, first another user should be logged out"
+rvToStr {#const CKR_USER_PIN_NOT_INITIALIZED#} = "user PIN not initialized, need to setup PIN first"
+rvToStr {#const CKR_USER_TOO_MANY_TYPES#} = "cannot login user, somebody should logout first"
+rvToStr {#const CKR_USER_TYPE_INVALID#} = "invalid value for user type"
 
 
 -- Attributes
@@ -547,6 +566,13 @@ generateKeyPair (Session sessionHandle functionListPtr) mechType pubKeyAttrs pri
         then fail $ "failed to generate key pair: " ++ (rvToStr rv)
         else return (pubKeyHandle, privKeyHandle)
 
+
+login :: Session -> UserType -> BU8.ByteString -> IO ()
+login (Session sessionHandle functionListPtr) userType pin = do
+    rv <- _login functionListPtr sessionHandle userType pin
+    if rv /= 0
+        then fail $ "login failed: " ++ (rvToStr rv)
+        else return ()
 
 
 getMechanismList :: Library -> Int -> Int -> IO [CULong]
