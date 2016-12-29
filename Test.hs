@@ -6,6 +6,7 @@ import Crypto.Random.AESCtr
 import qualified Codec.Crypto.RSA as RSA
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
+import Numeric
 
 
 generateKey :: Library -> BU8.ByteString -> String -> IO (ObjectHandle, ObjectHandle)
@@ -38,6 +39,10 @@ main = do
     mechInfo <- getMechanismInfo lib 0 (fromIntegral $ head mechanisms)
     putStrLn $ show mechInfo
 
+    --putStrLn "generating key"
+    --(pubKeyHandle, privKeyHandle) <- generateKey lib (BU8.fromString "123abc_") "key"
+    --putStrLn (show pubKeyHandle)
+
     withSession lib 0 0 $ \sess -> do
         login sess User (BU8.fromString "123abc_")
         objects <- findObjects sess [Class PrivateKey, Label "key"]
@@ -46,20 +51,17 @@ main = do
         mod <- getModulus sess objId
         pubExp <- getPublicExponent sess objId
         attr <- getObjectAttr sess objId DecryptType
-        putStrLn $ show attr
+        putStrLn $ showHex mod ""
+        putStrLn $ showHex pubExp ""
         rng <- newGenIO :: IO SystemRandom
-        --let pubKey = RSA.PublicKey 256 mod pubExp
-        --    (encText, rng') = RSA.encryptPKCS rng pubKey "hello"
-        pubObjects <- findObjects sess [Class PublicKey, Label "key"]
-        let pubKeyObjId = head pubObjects
-        encText <- encrypt RsaPkcs sess pubKeyObjId "hello"
-        putStrLn $ show encText
-        let encTextLen = BS.length encText
-        putStrLn $ show encTextLen
+        let pubKey = RSA.PublicKey 256 mod pubExp
+            (encText, rng') = RSA.encryptPKCS rng pubKey "hello"
+        --pubObjects <- findObjects sess [Class PublicKey, Label "key"]
+        --let pubKeyObjId = head pubObjects
+        --encText <- encrypt RsaPkcs sess pubKeyObjId "hello"
+        --putStrLn $ show encText
+        --let encTextLen = BS.length encText
+        --putStrLn $ show encTextLen
 
-        dec <- decrypt RsaPkcs sess objId encText
+        dec <- decrypt RsaPkcs sess objId (BSL.toStrict encText)
         putStrLn $ show dec
-
-    --putStrLn "generating key"
-    --(pubKeyHandle, privKeyHandle) <- generateKey lib (BU8.fromString "123abc_") "key"
-    --putStrLn (show pubKeyHandle)

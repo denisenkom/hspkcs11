@@ -485,7 +485,7 @@ _withAttribs attribs f = do
 _peekBigInt :: Ptr () -> CULong -> IO Integer
 _peekBigInt ptr len = do
     arr <- peekArray (fromIntegral len) (castPtr ptr :: Ptr Word8)
-    return $ foldr (\v acc -> (fromIntegral v) + (acc `shiftL` 8)) 0 arr
+    return $ foldl (\acc v -> (fromIntegral v) + (acc * 256)) 0 arr
 
 
 _llAttrToAttr :: LlAttribute -> IO Attribute
