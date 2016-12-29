@@ -15,7 +15,9 @@ library
         base,
         unix,
         utf8-string,
-        bytestring
+        bytestring,
+        RSA,
+        crypto-api
     Include-dirs: include
     exposed-modules:
         Pkcs11
@@ -31,7 +33,10 @@ test-suite pkcs11-tests
         testpack,
         unix,
         utf8-string,
-        bytestring
+        bytestring,
+        RSA,
+        crypto-api,
+        cprng-aes
     default-language:   Haskell2010
 
 

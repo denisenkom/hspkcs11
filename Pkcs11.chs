@@ -9,6 +9,7 @@ import System.Posix.DynamicLinker
 import Control.Monad
 import Control.Exception
 import qualified Data.ByteString.UTF8 as BU8
+import qualified Data.ByteString as BS
 import Data.ByteString.Unsafe
 
 #include "pkcs11import.h"
@@ -314,15 +315,23 @@ rvToStr {#const CKR_ARGUMENTS_BAD#} = "bad arguments"
 rvToStr {#const CKR_ATTRIBUTE_READ_ONLY#} = "attribute is read-only"
 rvToStr {#const CKR_ATTRIBUTE_TYPE_INVALID#} = "invalid attribute type specified in template"
 rvToStr {#const CKR_ATTRIBUTE_VALUE_INVALID#} = "invalid attribute value specified in template"
+rvToStr {#const CKR_BUFFER_TOO_SMALL#} = "buffer too small"
 rvToStr {#const CKR_CRYPTOKI_NOT_INITIALIZED#} = "cryptoki not initialized"
+rvToStr {#const CKR_DATA_INVALID#} = "data invalid"
 rvToStr {#const CKR_DEVICE_ERROR#} = "device error"
 rvToStr {#const CKR_DEVICE_MEMORY#} = "device memory"
 rvToStr {#const CKR_DEVICE_REMOVED#} = "device removed"
 rvToStr {#const CKR_DOMAIN_PARAMS_INVALID#} = "invalid domain parameters"
+rvToStr {#const CKR_ENCRYPTED_DATA_INVALID#} = "encrypted data is invalid"
+rvToStr {#const CKR_ENCRYPTED_DATA_LEN_RANGE#} = "encrypted data length not in range"
 rvToStr {#const CKR_FUNCTION_CANCELED#} = "function canceled"
 rvToStr {#const CKR_FUNCTION_FAILED#} = "function failed"
 rvToStr {#const CKR_GENERAL_ERROR#} = "general error"
 rvToStr {#const CKR_HOST_MEMORY#} = "host memory"
+rvToStr {#const CKR_KEY_FUNCTION_NOT_PERMITTED#} = "key function not permitted"
+rvToStr {#const CKR_KEY_HANDLE_INVALID#} = "key handle invalid"
+rvToStr {#const CKR_KEY_SIZE_RANGE#} = "key size range"
+rvToStr {#const CKR_KEY_TYPE_INCONSISTENT#} = "key type inconsistent"
 rvToStr {#const CKR_MECHANISM_INVALID#} = "invalid mechanism"
 rvToStr {#const CKR_MECHANISM_PARAM_INVALID#} = "invalid mechanism parameter"
 rvToStr {#const CKR_OPERATION_ACTIVE#} = "there is already an active operation in-progress"
@@ -349,6 +358,7 @@ rvToStr {#const CKR_USER_ANOTHER_ALREADY_LOGGED_IN#} = "another user already log
 rvToStr {#const CKR_USER_PIN_NOT_INITIALIZED#} = "user PIN not initialized, need to setup PIN first"
 rvToStr {#const CKR_USER_TOO_MANY_TYPES#} = "cannot login user, somebody should logout first"
 rvToStr {#const CKR_USER_TYPE_INVALID#} = "invalid value for user type"
+rvToStr rv = "unknown value for error " ++ (show rv)
 
 
 -- Attributes
@@ -385,13 +395,16 @@ rvToStr {#const CKR_USER_TYPE_INVALID#} = "invalid value for user type"
     CKA_EXPONENT_1 as Exponent1Type,
     CKA_EXPONENT_2 as Exponent2Type,
     CKA_COEFFICIENT as CoefficientType,
-    CKA_TOKEN as TokenType} deriving (Show, Eq) #}
+    CKA_TOKEN as TokenType,
+    CKA_DECRYPT as DecryptType
+    } deriving (Show, Eq) #}
 
 data Attribute = Class ClassType
     | KeyType KeyTypeValue
     | Label String
     | ModulusBits Int
     | Token Bool
+    | Decrypt Bool
     | Modulus Integer
     | PublicExponent Integer
     deriving (Show)
@@ -485,6 +498,9 @@ _llAttrToAttr (LlAttribute ModulusType ptr len) = do
 _llAttrToAttr (LlAttribute PublicExponentType ptr len) = do
     val <- _peekBigInt ptr len
     return (PublicExponent val)
+_llAttrToAttr (LlAttribute DecryptType ptr len) = do
+    val <- peek (castPtr ptr :: Ptr {#type CK_BBOOL#})
+    return $ Decrypt(val /= 0)
 
 
 -- High level API starts here
@@ -629,12 +645,81 @@ getObjectAttr (Session sessionHandle functionListPtr) objHandle attrType = do
                     _llAttrToAttr llAttr
 
 
+getModulus :: Session -> ObjectHandle -> IO Integer
+getModulus sess objHandle = do
+    (Modulus m) <- getObjectAttr sess objHandle ModulusType
+    return m
+
+getPublicExponent :: Session -> ObjectHandle -> IO Integer
+getPublicExponent sess objHandle = do
+    (PublicExponent v) <- getObjectAttr sess objHandle PublicExponentType
+    return v
+
+
 login :: Session -> UserType -> BU8.ByteString -> IO ()
 login (Session sessionHandle functionListPtr) userType pin = do
     rv <- _login functionListPtr sessionHandle userType pin
     if rv /= 0
         then fail $ "login failed: " ++ (rvToStr rv)
         else return ()
+
+
+{#enum define MechType {CKM_RSA_PKCS_KEY_PAIR_GEN as RsaPkcsKeyPairGen, CKM_RSA_PKCS as RsaPkcs} deriving (Eq) #}
+
+
+_decryptInit :: MechType -> Session -> ObjectHandle -> IO ()
+_decryptInit mechType (Session sessionHandle functionListPtr) obj = do
+    alloca $ \mechPtr -> do
+        poke mechPtr (Mech {mechType = fromEnum mechType, mechParamPtr = nullPtr, mechParamSize = 0})
+        rv <- {#call unsafe CK_FUNCTION_LIST.C_DecryptInit#} functionListPtr sessionHandle mechPtr obj
+        if rv /= 0
+            then fail $ "failed to initiate decryption: " ++ (rvToStr rv)
+            else return ()
+
+
+decrypt :: MechType -> Session -> ObjectHandle -> BS.ByteString -> IO BS.ByteString
+decrypt mechType (Session sessionHandle functionListPtr) obj encData = do
+    _decryptInit mechType (Session sessionHandle functionListPtr) obj
+    unsafeUseAsCStringLen encData $ \(encDataPtr, encDataLen) -> do
+        putStrLn $ "in data len " ++ (show encDataLen)
+        putStrLn $ show encData
+        allocaBytes encDataLen $ \outDataPtr -> do
+            alloca $ \outDataLenPtr -> do
+                poke outDataLenPtr (fromIntegral encDataLen)
+                rv <- {#call unsafe CK_FUNCTION_LIST.C_Decrypt#} functionListPtr sessionHandle (castPtr encDataPtr) (fromIntegral encDataLen) outDataPtr outDataLenPtr
+                if rv /= 0
+                    then fail $ "failed to decrypt: " ++ (rvToStr rv)
+                    else do
+                        outDataLen <- peek outDataLenPtr
+                        res <- BS.packCStringLen (castPtr outDataPtr, fromIntegral outDataLen)
+                        return res
+
+
+_encryptInit :: MechType -> Session -> ObjectHandle -> IO ()
+_encryptInit mechType (Session sessionHandle functionListPtr) obj = do
+    alloca $ \mechPtr -> do
+        poke mechPtr (Mech {mechType = fromEnum mechType, mechParamPtr = nullPtr, mechParamSize = 0})
+        rv <- {#call unsafe CK_FUNCTION_LIST.C_EncryptInit#} functionListPtr sessionHandle mechPtr obj
+        if rv /= 0
+            then fail $ "failed to initiate decryption: " ++ (rvToStr rv)
+            else return ()
+
+
+encrypt :: MechType -> Session -> ObjectHandle -> BS.ByteString -> IO BS.ByteString
+encrypt mechType (Session sessionHandle functionListPtr) obj encData = do
+    _encryptInit mechType (Session sessionHandle functionListPtr) obj
+    let outLen = 1000
+    unsafeUseAsCStringLen encData $ \(encDataPtr, encDataLen) -> do
+        allocaBytes outLen $ \outDataPtr -> do
+            alloca $ \outDataLenPtr -> do
+                poke outDataLenPtr (fromIntegral outLen)
+                rv <- {#call unsafe CK_FUNCTION_LIST.C_Encrypt#} functionListPtr sessionHandle (castPtr encDataPtr) (fromIntegral encDataLen) outDataPtr outDataLenPtr
+                if rv /= 0
+                    then fail $ "failed to decrypt: " ++ (rvToStr rv)
+                    else do
+                        outDataLen <- peek outDataLenPtr
+                        res <- BS.packCStringLen (castPtr outDataPtr, fromIntegral outDataLen)
+                        return res
 
 
 getMechanismList :: Library -> Int -> Int -> IO [CULong]
