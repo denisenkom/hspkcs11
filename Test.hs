@@ -4,6 +4,7 @@ import Pkcs11
 import Crypto.Random
 import Crypto.Random.AESCtr
 import qualified Codec.Crypto.RSA as RSA
+import qualified Crypto.Cipher.AES as AESmod
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import Numeric
@@ -55,7 +56,8 @@ main = do
         putStrLn $ showHex pubExp ""
         rng <- newGenIO :: IO SystemRandom
         let pubKey = RSA.PublicKey 256 mod pubExp
-            (encKey, rng') = RSA.encryptPKCS rng pubKey "0000000000000000"
+            aesKeyBs = BS.pack [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+            (encKey, rng') = RSA.encryptPKCS rng pubKey (BSL.fromStrict aesKeyBs)
         --pubObjects <- findObjects sess [Class PublicKey, Label "key"]
         --let pubKeyObjId = head pubObjects
         --encText <- encrypt RsaPkcs sess pubKeyObjId "hello"
@@ -64,5 +66,13 @@ main = do
         --putStrLn $ show encTextLen
         unwrappedKeyHandle <- unwrapKey RsaPkcs sess objId (BSL.toStrict encKey) [Class SecretKey, KeyType AES]
 
+        let aesKey = AESmod.initAES aesKeyBs
+            encryptedMessage = AESmod.encryptECB aesKey "hello00000000000"
+
+        -- test decryption using RSA key
         dec <- decrypt RsaPkcs sess objId (BSL.toStrict encKey)
         putStrLn $ show dec
+
+        -- test decryption using AES key
+        decAes <- decrypt AesEcb sess unwrappedKeyHandle encryptedMessage
+        putStrLn $ show decAes

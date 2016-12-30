@@ -36,7 +36,8 @@ test-suite pkcs11-tests
         bytestring,
         RSA,
         crypto-api,
-        cprng-aes
+        cprng-aes,
+        cipher-aes
     default-language:   Haskell2010
 
 

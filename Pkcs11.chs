@@ -671,7 +671,16 @@ login (Session sessionHandle functionListPtr) userType pin = do
         else return ()
 
 
-{#enum define MechType {CKM_RSA_PKCS_KEY_PAIR_GEN as RsaPkcsKeyPairGen, CKM_RSA_PKCS as RsaPkcs} deriving (Eq) #}
+{#enum define MechType {
+    CKM_RSA_PKCS_KEY_PAIR_GEN as RsaPkcsKeyPairGen,
+    CKM_RSA_PKCS as RsaPkcs,
+    CKM_AES_ECB as AesEcb,
+    CKM_AES_CBC as AesCbc,
+    CKM_AES_MAC as AesMac,
+    CKM_AES_MAC_GENERAL as AesMacGeneral,
+    CKM_AES_CBC_PAD as AesCbcPad,
+    CKM_AES_CTR as AesCtr
+    } deriving (Eq) #}
 
 
 _decryptInit :: MechType -> Session -> ObjectHandle -> IO ()
