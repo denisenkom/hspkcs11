@@ -55,13 +55,14 @@ main = do
         putStrLn $ showHex pubExp ""
         rng <- newGenIO :: IO SystemRandom
         let pubKey = RSA.PublicKey 256 mod pubExp
-            (encText, rng') = RSA.encryptPKCS rng pubKey "hello"
+            (encKey, rng') = RSA.encryptPKCS rng pubKey "0000000000000000"
         --pubObjects <- findObjects sess [Class PublicKey, Label "key"]
         --let pubKeyObjId = head pubObjects
         --encText <- encrypt RsaPkcs sess pubKeyObjId "hello"
         --putStrLn $ show encText
         --let encTextLen = BS.length encText
         --putStrLn $ show encTextLen
+        unwrappedKeyHandle <- unwrapKey RsaPkcs sess objId (BSL.toStrict encKey) [Class SecretKey, KeyType AES]
 
-        dec <- decrypt RsaPkcs sess objId (BSL.toStrict encText)
+        dec <- decrypt RsaPkcs sess objId (BSL.toStrict encKey)
         putStrLn $ show dec

@@ -352,12 +352,17 @@ rvToStr {#const CKR_TEMPLATE_INCONSISTENT#} = "provided template is inconsistent
 rvToStr {#const CKR_TOKEN_NOT_PRESENT#} = "token not present"
 rvToStr {#const CKR_TOKEN_NOT_RECOGNIZED#} = "token not recognized"
 rvToStr {#const CKR_TOKEN_WRITE_PROTECTED#} = "token is write protected"
+rvToStr {#const CKR_UNWRAPPING_KEY_HANDLE_INVALID#} = "unwrapping key handle invalid"
+rvToStr {#const CKR_UNWRAPPING_KEY_SIZE_RANGE#} = "unwrapping key size not in range"
+rvToStr {#const CKR_UNWRAPPING_KEY_TYPE_INCONSISTENT#} = "unwrapping key type inconsistent"
 rvToStr {#const CKR_USER_NOT_LOGGED_IN#} = "user needs to be logged in to perform this operation"
 rvToStr {#const CKR_USER_ALREADY_LOGGED_IN#} = "user already logged in"
 rvToStr {#const CKR_USER_ANOTHER_ALREADY_LOGGED_IN#} = "another user already logged in, first another user should be logged out"
 rvToStr {#const CKR_USER_PIN_NOT_INITIALIZED#} = "user PIN not initialized, need to setup PIN first"
 rvToStr {#const CKR_USER_TOO_MANY_TYPES#} = "cannot login user, somebody should logout first"
 rvToStr {#const CKR_USER_TYPE_INVALID#} = "invalid value for user type"
+rvToStr {#const CKR_WRAPPED_KEY_INVALID#} = "wrapped key invalid"
+rvToStr {#const CKR_WRAPPED_KEY_LEN_RANGE#} = "wrapped key length not in range"
 rvToStr rv = "unknown value for error " ++ (show rv)
 
 
@@ -380,7 +385,9 @@ rvToStr rv = "unknown value for error " ++ (show rv)
     CKK_DSA as DSA,
     CKK_DH as DH,
     CKK_ECDSA as ECDSA,
-    CKK_EC as EC} deriving (Show, Eq) #}
+    CKK_EC as EC,
+    CKK_AES as AES
+    } deriving (Show, Eq) #}
 
 {#enum define AttributeType {
     CKA_CLASS as ClassType,
@@ -720,6 +727,21 @@ encrypt mechType (Session sessionHandle functionListPtr) obj encData = do
                         outDataLen <- peek outDataLenPtr
                         res <- BS.packCStringLen (castPtr outDataPtr, fromIntegral outDataLen)
                         return res
+
+
+unwrapKey :: MechType -> Session -> ObjectHandle -> BS.ByteString -> [Attribute] -> IO ObjectHandle
+unwrapKey mechType (Session sessionHandle functionListPtr) key wrappedKey template = do
+    _withAttribs template $ \attribsPtr -> do
+        alloca $ \mechPtr -> do
+            poke mechPtr (Mech {mechType = fromEnum mechType, mechParamPtr = nullPtr, mechParamSize = 0})
+            unsafeUseAsCStringLen wrappedKey $ \(wrappedKeyPtr, wrappedKeyLen) -> do
+                alloca $ \unwrappedKeyPtr -> do
+                    rv <- {#call unsafe CK_FUNCTION_LIST.C_UnwrapKey#} functionListPtr sessionHandle mechPtr key (castPtr wrappedKeyPtr) (fromIntegral wrappedKeyLen) attribsPtr (fromIntegral $ length template) unwrappedKeyPtr
+                    if rv /= 0
+                        then fail $ "failed to unwrap key: " ++ (rvToStr rv)
+                        else do
+                            unwrappedKey <- peek unwrappedKeyPtr
+                            return unwrappedKey
 
 
 getMechanismList :: Library -> Int -> Int -> IO [CULong]
