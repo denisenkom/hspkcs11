@@ -1,6 +1,4 @@
 resolver: lts-6.5
-packages:
-- benchmarks
 extra-deps:
 - semigroups-0.18.2
 flags:
