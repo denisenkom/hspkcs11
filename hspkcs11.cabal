@@ -17,7 +17,8 @@ library
         utf8-string,
         bytestring,
         RSA,
-        crypto-api
+        crypto-api,
+        c2hs
     Include-dirs: include
     exposed-modules:
         Pkcs11
