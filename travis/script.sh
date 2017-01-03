@@ -8,7 +8,7 @@ case $BUILD in
     ;;
   cabal)
     if [ -f configure.ac ]; then autoreconf -i; fi
-    cabal configure --enable-tests --enable-benchmarks -v2  # -v2 provides useful information for debugging
+    cabal configure -v2  # -v2 provides useful information for debugging
     cabal build   # this builds all libraries and executables (including tests/benchmarks)
     cabal test
     cabal sdist   # tests that a source-distribution can be generated
