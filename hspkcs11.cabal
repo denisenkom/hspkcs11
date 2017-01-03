@@ -8,6 +8,7 @@ author:         Mikhail Denisenko
 category:       Cryptography
 build-type:     Simple
 cabal-version:  >=1.10
+extra-source-files: include/*.h
 
 library
     build-tools:    c2hs
