@@ -26,7 +26,7 @@ case $BUILD in
     cabal install c2hs
 
     sed -i 's/^jobs:/-- jobs:/' ${HOME}/.cabal/config
-    cabal install --only-dependencies --enable-tests --dry -v > installplan.txt
+    cabal install --only-dependencies --enable-tests --dry -v --force-reinstalls > installplan.txt
     sed -i -e '1,/^Resolving /d' installplan.txt; cat installplan.txt
 
     # check whether current requested install-plan matches cached package-db snapshot
@@ -40,7 +40,7 @@ case $BUILD in
       echo "cabal build-cache MISS";
       rm -rf $HOME/.cabsnap;
       mkdir -p $HOME/.ghc $HOME/.cabal/lib $HOME/.cabal/share $HOME/.cabal/bin;
-      cabal install --only-dependencies --enable-tests;
+      cabal install --only-dependencies --enable-tests --force-reinstalls;
     fi
 
     # snapshot package-db on cache miss
