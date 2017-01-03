@@ -17,6 +17,7 @@ case $BUILD in
       zcat $HOME/.cabal/packages/hackage.haskell.org/00-index.tar.gz > $HOME/.cabal/packages/hackage.haskell.org/00-index.tar
     fi
     cabal update -v || cabal update -v
+    cabal install c2hs
     sed -i 's/^jobs:/-- jobs:/' ${HOME}/.cabal/config
     cabal install --only-dependencies --enable-tests --dry -v > installplan.txt
     sed -i -e '1,/^Resolving /d' installplan.txt; cat installplan.txt
