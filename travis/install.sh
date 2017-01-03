@@ -17,8 +17,14 @@ case $BUILD in
       zcat $HOME/.cabal/packages/hackage.haskell.org/00-index.tar.gz > $HOME/.cabal/packages/hackage.haskell.org/00-index.tar
     fi
     cabal update -v || cabal update -v
+
+    # those are dependencies of c2hs
     cabal install happy
+    cabal install alex
+
+    # this is needed to build hspkcs11
     cabal install c2hs
+
     sed -i 's/^jobs:/-- jobs:/' ${HOME}/.cabal/config
     cabal install --only-dependencies --enable-tests --dry -v > installplan.txt
     sed -i -e '1,/^Resolving /d' installplan.txt; cat installplan.txt
