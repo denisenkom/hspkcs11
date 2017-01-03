@@ -1,7 +1,6 @@
 resolver: lts-6.5
 extra-deps:
 - semigroups-0.18.2
-- testpack-2.1.3.0
 flags:
   semigroups:
     bytestring-builder: false

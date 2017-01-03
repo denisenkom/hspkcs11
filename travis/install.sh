@@ -2,16 +2,16 @@
 
 set -ex
 
-cabal --version
 echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
-stack --version
 
 case $BUILD in
   stack)
+    stack --version
     stack --no-terminal --skip-ghc-check setup
     stack --no-terminal --skip-ghc-check test --only-snapshot
     ;;
   cabal)
+    cabal --version
     if [ -f $HOME/.cabal/packages/hackage.haskell.org/00-index.tar.gz ]
     then
       zcat $HOME/.cabal/packages/hackage.haskell.org/00-index.tar.gz > $HOME/.cabal/packages/hackage.haskell.org/00-index.tar
