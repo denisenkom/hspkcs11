@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 import qualified Data.ByteString.UTF8 as BU8
-import Pkcs11
+import System.Crypto.Pkcs11
 import Crypto.Random
 import Crypto.Random.AESCtr
 import qualified Codec.Crypto.RSA as RSA

@@ -1,5 +1,5 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
-module Pkcs11 where
+module System.Crypto.Pkcs11 where
 import Foreign
 import Foreign.Marshal.Utils
 import Foreign.Marshal.Alloc
