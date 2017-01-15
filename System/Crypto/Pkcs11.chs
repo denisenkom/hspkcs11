@@ -3,11 +3,9 @@ module System.Crypto.Pkcs11 (
     -- * Library
     Library,
     loadLibrary,
+    releaseLibrary,
 
     -- ** Reading library information
-    Version,
-    versionMajor,
-    versionMinor,
     Info,
     getInfo,
     infoCryptokiVersion,
@@ -75,6 +73,11 @@ module System.Crypto.Pkcs11 (
     -- * Encryption/decryption
     decrypt,
     encrypt,
+
+    -- * Misc
+    Version,
+    versionMajor,
+    versionMinor,
 ) where
 import Foreign
 import Foreign.Marshal.Utils
@@ -141,10 +144,14 @@ instance Storable Version where
     {#set CK_VERSION->minor#} p (fromIntegral $ versionMinor x)
 
 data Info = Info {
+    -- | Cryptoki interface version number, for compatibility with future revisions of this interface
     infoCryptokiVersion :: Version,
+    -- | ID of the Cryptoki library manufacturer
     infoManufacturerId :: String,
+    -- | bit flags reserved for future versions. Must be zero for this version
     infoFlags :: Int,
     infoLibraryDescription :: String,
+    -- | Cryptoki library version number
     infoLibraryVersion :: Version
 } deriving (Show)
 
@@ -598,6 +605,9 @@ data Library = Library {
 data Session = Session SessionHandle FunctionListPtr
 
 
+-- | Load PKCS#11 dynamically linked library
+--
+-- > lib <- loadLibrary "/path/to/dll.so"
 loadLibrary :: String -> IO Library
 loadLibrary libraryPath = do
     lib <- dlopen libraryPath []
@@ -617,6 +627,7 @@ releaseLibrary lib = do
     dlclose $ libraryHandle lib
 
 
+-- | Returns general information about Cryptoki
 getInfo :: Library -> IO Info
 getInfo (Library _ functionListPtr) = do
     (rv, info) <- getInfo' functionListPtr
@@ -625,6 +636,11 @@ getInfo (Library _ functionListPtr) = do
         else return info
 
 
+-- | Allows to obtain a list of slots in the system
+--
+-- > slotsIds <- getSlotList lib True 10
+--
+-- In this example retrieves list of, at most 10 (third parameter) slot identifiers with tokens present (second parameter is set to True)
 getSlotList :: Library -> Bool -> Int -> IO [SlotId]
 getSlotList (Library _ functionListPtr) active num = do
     (rv, slots) <- getSlotList' functionListPtr active num

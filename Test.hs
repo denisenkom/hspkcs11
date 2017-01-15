@@ -78,3 +78,5 @@ main = do
         decAes <- decrypt AesEcb sess unwrappedKeyHandle encryptedMessage
         putStrLn $ show decAes
         logout sess
+
+    releaseLibrary lib
