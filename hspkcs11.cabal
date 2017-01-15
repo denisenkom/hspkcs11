@@ -27,6 +27,7 @@ library
     Default-language:  Haskell2010
 
 executable pkcs11-tests
+    build-tools:   c2hs
     main-is:            Test.hs
     Include-dirs: include
     other-modules:      System.Crypto.Pkcs11
