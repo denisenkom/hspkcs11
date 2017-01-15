@@ -12,9 +12,9 @@ import Numeric
 
 generateKey :: Library -> BU8.ByteString -> String -> IO (ObjectHandle, ObjectHandle)
 generateKey lib pin label = do
-    withSession lib 0 rwSession $ \sess -> do
+    withSession lib 0 True $ \sess -> do
         login sess User pin
-        generateKeyPair sess rsaPkcsKeyPairGen [ModulusBits 2048, Label label, Token True] [Label label, Token True]
+        generateKeyPair sess RsaPkcsKeyPairGen [ModulusBits 2048, Label label, Token True] [Label label, Token True]
 
 
 
@@ -37,21 +37,22 @@ main = do
     mechanisms <- getMechanismList lib 0 100
     putStrLn $ show mechanisms
 
-    mechInfo <- getMechanismInfo lib 0 (fromIntegral $ head mechanisms)
+    mechInfo <- getMechanismInfo lib 0 RsaPkcsKeyPairGen
     putStrLn $ show mechInfo
 
     --putStrLn "generating key"
     --(pubKeyHandle, privKeyHandle) <- generateKey lib (BU8.fromString "123abc_") "key"
     --putStrLn (show pubKeyHandle)
 
-    withSession lib 0 0 $ \sess -> do
+    withSession lib 0 False $ \sess -> do
         login sess User (BU8.fromString "123abc_")
         objects <- findObjects sess [Class PrivateKey, Label "key"]
         putStrLn $ show objects
         let objId = head objects
         mod <- getModulus sess objId
         pubExp <- getPublicExponent sess objId
-        attr <- getObjectAttr sess objId DecryptType
+        decryptFlag <- getDecryptFlag sess objId
+        putStrLn $ show decryptFlag
         putStrLn $ showHex mod ""
         putStrLn $ showHex pubExp ""
         rng <- newGenIO :: IO SystemRandom
@@ -76,3 +77,4 @@ main = do
         -- test decryption using AES key
         decAes <- decrypt AesEcb sess unwrappedKeyHandle encryptedMessage
         putStrLn $ show decAes
+        logout sess
