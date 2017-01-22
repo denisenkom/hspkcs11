@@ -173,6 +173,8 @@ instance Storable Info where
                  infoLibraryDescription=libraryDescription,
                  infoLibraryVersion=libVer
                  }
+  poke p v = do
+    error "not implemented"
 
 
 peekInfo :: Ptr Info -> IO Info
@@ -203,6 +205,8 @@ instance Storable SlotInfo where
                      slotInfoHardwareVersion=hwVer,
                      slotInfoFirmwareVersion=fwVer
                      }
+  poke p v = do
+    error "not implemented"
 
 
 data TokenInfo = TokenInfo {
@@ -236,6 +240,9 @@ instance Storable TokenInfo where
                           --tokenInfoFirmwareVersion=fwVer
                           }
 
+    poke p v = do
+        error "not implemented"
+
 
 data MechInfo = MechInfo {
     mechInfoMinKeySize :: Int,
@@ -265,6 +272,8 @@ data Mech = Mech {
 instance Storable Mech where
     sizeOf _ = {#sizeof CK_MECHANISM_TYPE#} + {#sizeof CK_VOID_PTR#} + {#sizeof CK_ULONG#}
     alignment _ = 1
+    peek p = do
+        error "not implemented"
     poke p x = do
         poke (p `plusPtr` 0) (fromEnum $ mechType x)
         poke (p `plusPtr` {#sizeof CK_MECHANISM_TYPE#}) (mechParamPtr x :: {#type CK_VOID_PTR#})
