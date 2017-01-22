@@ -477,9 +477,40 @@ rvToStr rv = "unknown value for error " ++ (show rv)
 {#enum define AttributeType {
     CKA_CLASS as ClassType,
     CKA_TOKEN as TokenType,
+    CKA_PRIVATE as PrivateType,
     CKA_LABEL as LabelType,
+    CKA_APPLICATION as ApplicationType,
+    CKA_VALUE as ValueType,
+    CKA_OBJECT_ID as ObjectType,
+    CKA_CERTIFICATE_TYPE as CertificateType,
+    CKA_ISSUER as IssuerType,
+    CKA_SERIAL_NUMBER as SerialNumberType,
+    CKA_AC_ISSUER as AcIssuerType,
+    CKA_OWNER as OwnerType,
+    CKA_ATTR_TYPES as AttrTypesType,
+    CKA_TRUSTED as TrustedType,
+    CKA_CERTIFICATE_CATEGORY as CertificateCategoryType,
+    CKA_JAVA_MIDP_SECURITY_DOMAIN as JavaMidpSecurityDomainType,
+    CKA_URL as UrlType,
+    CKA_HASH_OF_SUBJECT_PUBLIC_KEY as HashOfSubjectPublicKeyType,
+    CKA_HASH_OF_ISSUER_PUBLIC_KEY as HashOfIssuerPublicKeyType,
+    CKA_CHECK_VALUE as CheckValueType,
+
     CKA_KEY_TYPE as KeyTypeType,
+    CKA_SUBJECT as SubjectType,
+    CKA_ID as IdType,
+    CKA_SENSITIVE as SensitiveType,
+    CKA_ENCRYPT as EncryptType,
     CKA_DECRYPT as DecryptType,
+    CKA_WRAP as WrapType,
+    CKA_UNWRAP as UnwrapType,
+    CKA_SIGN as SignType,
+    CKA_SIGN_RECOVER as SignRecoverType,
+    CKA_VERIFY as VerifyType,
+    CKA_VERIFY_RECOVER as VerifyRecoverType,
+    CKA_DERIVE as DeriveType,
+    CKA_START_DATE as StartDateType,
+    CKA_END_DATE as EndDataType,
     CKA_PUBLIC_EXPONENT as PublicExponentType,
     CKA_PRIVATE_EXPONENT as PrivateExponentType,
     CKA_MODULUS as ModulusType,
@@ -488,7 +519,80 @@ rvToStr rv = "unknown value for error " ++ (show rv)
     CKA_PRIME_2 as Prime2Type,
     CKA_EXPONENT_1 as Exponent1Type,
     CKA_EXPONENT_2 as Exponent2Type,
-    CKA_COEFFICIENT as CoefficientType
+    CKA_COEFFICIENT as CoefficientType,
+
+    CKA_PRIME_BITS as PrimeBitsType,
+    CKA_SUBPRIME_BITS as SubPrimeBitsType,
+
+    CKA_VALUE_BITS as ValueBitsType,
+    CKA_VALUE_LEN as ValueLenType,
+    CKA_EXTRACTABLE as ExtractableType,
+    CKA_LOCAL as LocalType,
+    CKA_NEVER_EXTRACTABLE as NeverExtractableType,
+    CKA_ALWAYS_SENSITIVE as AlwaysSensitiveType,
+    CKA_KEY_GEN_MECHANISM as KeyGenMechanismType,
+
+    CKA_MODIFIABLE as ModifiableType,
+
+    -- CKA_ECDSA_PARAMS is deprecated in v2.11,
+    -- CKA_EC_PARAMS is preferred.
+    CKA_ECDSA_PARAMS as EcdsaParamsType,
+    CKA_EC_PARAMS as EcParamsType,
+
+    CKA_EC_POINT as EcPointType,
+
+    -- CKA_SECONDARY_AUTH, CKA_AUTH_PIN_FLAGS,
+    -- are new for v2.10. Deprecated in v2.11 and onwards.
+    CKA_SECONDARY_AUTH as SecondaryAuthType,
+    CKA_AUTH_PIN_FLAGS as AuthPinFlagsType,
+
+    CKA_ALWAYS_AUTHENTICATE as AlwaysAuthenticateType,
+
+    CKA_WRAP_WITH_TRUSTED    as WrapWithTrustedType,
+    CKA_WRAP_TEMPLATE        as WrapTemplateType,
+    CKA_UNWRAP_TEMPLATE      as UnwrapTemplateType,
+    CKA_DERIVE_TEMPLATE      as DeriveTemplateType,
+
+    CKA_OTP_FORMAT                as OtpFormatType,
+    CKA_OTP_LENGTH                as OtpLengthType,
+    CKA_OTP_TIME_INTERVAL         as OtpTimeIntervalType,
+    CKA_OTP_USER_FRIENDLY_MODE    as OtpUserFriendlyModeType,
+    CKA_OTP_CHALLENGE_REQUIREMENT as OtpChallengeRequirementType,
+    CKA_OTP_TIME_REQUIREMENT      as OtpTimeRequirementType,
+    CKA_OTP_COUNTER_REQUIREMENT   as OtpCounterRequirementType,
+    CKA_OTP_PIN_REQUIREMENT       as OtpPinRequirementType,
+    CKA_OTP_COUNTER               as OtpCounterType,
+    CKA_OTP_TIME                  as OtpTimeType,
+    CKA_OTP_USER_IDENTIFIER       as OtpUserIdentifierType,
+    CKA_OTP_SERVICE_IDENTIFIER    as OtpServiceIdentifierType,
+    CKA_OTP_SERVICE_LOGO          as OtpServiceLogoType,
+    CKA_OTP_SERVICE_LOGO_TYPE     as OtpServiceLogoTypeType,
+
+    CKA_GOSTR3410_PARAMS          as GostR3410ParamsType,
+    CKA_GOSTR3411_PARAMS          as GostR3411ParamsType,
+    CKA_GOST28147_PARAMS          as Gost28147ParamsType,
+
+    CKA_HW_FEATURE_TYPE    as HwFeatureTypeType,
+    CKA_RESET_ON_INIT      as ResetOnInitType,
+    CKA_HAS_RESET          as HasResetType,
+
+    CKA_PIXEL_X                     as PixelXType,
+    CKA_PIXEL_Y                     as PixelYType,
+    CKA_RESOLUTION                  as ResolutionType,
+    CKA_CHAR_ROWS                   as CharRowsType,
+    CKA_CHAR_COLUMNS                as CharColumnsType,
+    CKA_COLOR                       as ColorType,
+    CKA_BITS_PER_PIXEL              as BitPerPixelType,
+    CKA_CHAR_SETS                   as CharSetsType,
+    CKA_ENCODING_METHODS            as EncodingMethodsType,
+    CKA_MIME_TYPES                  as MimeTypesType,
+    CKA_MECHANISM_TYPE              as MechanismTypeType,
+    CKA_REQUIRED_CMS_ATTRIBUTES     as RequiredCmsAttributesType,
+    CKA_DEFAULT_CMS_ATTRIBUTES      as DefaultCmsAttributesType,
+    CKA_SUPPORTED_CMS_ATTRIBUTES    as SupportedCmsAttributesType,
+    CKA_ALLOWED_MECHANISMS          as AllowedMechanismsType,
+
+    CKA_VENDOR_DEFINED     as VendorDefinedType
     } deriving (Show, Eq) #}
 
 data Attribute = Class ClassType
