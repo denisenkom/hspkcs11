@@ -49,10 +49,16 @@ main = do
         objects <- findObjects sess [Class PrivateKey, Label "key"]
         putStrLn $ show objects
         let objId = head objects
+        getTokenFlag sess objId
+        getPrivateFlag sess objId
+        getSensitiveFlag sess objId
+        --getEncryptFlag sess objId
+        decryptFlag <- getDecryptFlag sess objId
+        --getWrapFlag sess objId
+        getUnwrapFlag sess objId
+        signFlag <- getSignFlag sess objId
         mod <- getModulus sess objId
         pubExp <- getPublicExponent sess objId
-        decryptFlag <- getDecryptFlag sess objId
-        signFlag <- getSignFlag sess objId
         putStrLn $ show decryptFlag
         putStrLn $ show signFlag
         putStrLn $ showHex mod ""

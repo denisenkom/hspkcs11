@@ -60,10 +60,16 @@ module System.Crypto.Pkcs11 (
     -- ** Searching objects
     findObjects,
     -- ** Reading object attributes
+    getTokenFlag,
+    getPrivateFlag,
+    getSensitiveFlag,
+    getEncryptFlag,
+    getDecryptFlag,
+    getWrapFlag,
+    getUnwrapFlag,
+    getSignFlag,
     getModulus,
     getPublicExponent,
-    getDecryptFlag,
-    getSignFlag,
 
     -- * Key generation
     generateKeyPair,
@@ -108,6 +114,7 @@ rsaPkcsKeyPairGen = {#const CKM_RSA_PKCS_KEY_PAIR_GEN#} :: Int
 type ObjectHandle = {#type CK_OBJECT_HANDLE#}
 type SlotId = Int
 type Rv = {#type CK_RV#}
+type CK_BBOOL = {#type CK_BBOOL#}
 type CK_BYTE = {#type CK_BYTE#}
 type CK_FLAGS = {#type CK_FLAGS#}
 type GetFunctionListFunPtr = {#type CK_C_GetFunctionList#}
@@ -855,6 +862,24 @@ generateKeyPair (Session sessionHandle functionListPtr) mechType pubKeyAttrs pri
         else return (pubKeyHandle, privKeyHandle)
 
 
+_getAttr :: Session -> ObjectHandle -> AttributeType -> Ptr x -> IO ()
+_getAttr (Session sessionHandle functionListPtr) objHandle attrType valPtr = do
+    alloca $ \attrPtr -> do
+        poke attrPtr (LlAttribute attrType (castPtr valPtr) (fromIntegral $ sizeOf valPtr))
+        rv <- {#call unsafe CK_FUNCTION_LIST.C_GetAttributeValue#} functionListPtr sessionHandle objHandle attrPtr 1
+        if rv /= 0
+            then fail $ "failed to get attribute: " ++ (rvToStr rv)
+            else return ()
+
+
+getBoolAttr :: Session -> ObjectHandle -> AttributeType -> IO Bool
+getBoolAttr sess objHandle attrType = do
+    alloca $ \valuePtr -> do
+        _getAttr sess objHandle attrType (valuePtr :: Ptr CK_BBOOL)
+        val <- peek valuePtr
+        return $ toBool val
+
+
 getObjectAttr :: Session -> ObjectHandle -> AttributeType -> IO Attribute
 getObjectAttr (Session sessionHandle functionListPtr) objHandle attrType = do
     alloca $ \attrPtr -> do
@@ -871,15 +896,14 @@ getObjectAttr (Session sessionHandle functionListPtr) objHandle attrType = do
                     _llAttrToAttr llAttr
 
 
-getDecryptFlag :: Session -> ObjectHandle -> IO Bool
-getDecryptFlag sess objHandle = do
-    (Decrypt v) <- getObjectAttr sess objHandle DecryptType
-    return v
-
-getSignFlag :: Session -> ObjectHandle -> IO Bool
-getSignFlag sess objHandle = do
-    (Sign v) <- getObjectAttr sess objHandle SignType
-    return v
+getTokenFlag sess objHandle = getBoolAttr sess objHandle TokenType
+getPrivateFlag sess objHandle = getBoolAttr sess objHandle PrivateType
+getSensitiveFlag sess objHandle = getBoolAttr sess objHandle SensitiveType
+getEncryptFlag sess objHandle = getBoolAttr sess objHandle EncryptType
+getDecryptFlag sess objHandle = getBoolAttr sess objHandle DecryptType
+getWrapFlag sess objHandle = getBoolAttr sess objHandle WrapType
+getUnwrapFlag sess objHandle = getBoolAttr sess objHandle UnwrapType
+getSignFlag sess objHandle = getBoolAttr sess objHandle SignType
 
 getModulus :: Session -> ObjectHandle -> IO Integer
 getModulus sess objHandle = do
