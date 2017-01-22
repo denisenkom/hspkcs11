@@ -476,19 +476,19 @@ rvToStr rv = "unknown value for error " ++ (show rv)
 
 {#enum define AttributeType {
     CKA_CLASS as ClassType,
-    CKA_KEY_TYPE as KeyTypeType,
+    CKA_TOKEN as TokenType,
     CKA_LABEL as LabelType,
-    CKA_MODULUS_BITS as ModulusBitsType,
-    CKA_MODULUS as ModulusType,
+    CKA_KEY_TYPE as KeyTypeType,
+    CKA_DECRYPT as DecryptType,
     CKA_PUBLIC_EXPONENT as PublicExponentType,
     CKA_PRIVATE_EXPONENT as PrivateExponentType,
+    CKA_MODULUS as ModulusType,
+    CKA_MODULUS_BITS as ModulusBitsType,
     CKA_PRIME_1 as Prime1Type,
     CKA_PRIME_2 as Prime2Type,
     CKA_EXPONENT_1 as Exponent1Type,
     CKA_EXPONENT_2 as Exponent2Type,
-    CKA_COEFFICIENT as CoefficientType,
-    CKA_TOKEN as TokenType,
-    CKA_DECRYPT as DecryptType
+    CKA_COEFFICIENT as CoefficientType
     } deriving (Show, Eq) #}
 
 data Attribute = Class ClassType
