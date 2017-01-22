@@ -52,7 +52,9 @@ main = do
         mod <- getModulus sess objId
         pubExp <- getPublicExponent sess objId
         decryptFlag <- getDecryptFlag sess objId
+        signFlag <- getSignFlag sess objId
         putStrLn $ show decryptFlag
+        putStrLn $ show signFlag
         putStrLn $ showHex mod ""
         putStrLn $ showHex pubExp ""
         rng <- newGenIO :: IO SystemRandom

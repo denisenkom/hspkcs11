@@ -63,6 +63,7 @@ module System.Crypto.Pkcs11 (
     getModulus,
     getPublicExponent,
     getDecryptFlag,
+    getSignFlag,
 
     -- * Key generation
     generateKeyPair,
@@ -601,6 +602,7 @@ data Attribute = Class ClassType
     | ModulusBits Int
     | Token Bool
     | Decrypt Bool
+    | Sign Bool
     | Modulus Integer
     | PublicExponent Integer
     deriving (Show)
@@ -697,6 +699,9 @@ _llAttrToAttr (LlAttribute PublicExponentType ptr len) = do
 _llAttrToAttr (LlAttribute DecryptType ptr len) = do
     val <- peek (castPtr ptr :: Ptr {#type CK_BBOOL#})
     return $ Decrypt(val /= 0)
+_llAttrToAttr (LlAttribute SignType ptr len) = do
+    val <- peek (castPtr ptr :: Ptr {#type CK_BBOOL#})
+    return $ Sign(val /= 0)
 
 
 -- High level API starts here
@@ -860,6 +865,11 @@ getObjectAttr (Session sessionHandle functionListPtr) objHandle attrType = do
 getDecryptFlag :: Session -> ObjectHandle -> IO Bool
 getDecryptFlag sess objHandle = do
     (Decrypt v) <- getObjectAttr sess objHandle DecryptType
+    return v
+
+getSignFlag :: Session -> ObjectHandle -> IO Bool
+getSignFlag sess objHandle = do
+    (Sign v) <- getObjectAttr sess objHandle SignType
     return v
 
 getModulus :: Session -> ObjectHandle -> IO Integer
