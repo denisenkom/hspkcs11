@@ -181,6 +181,7 @@ peekInfo ptr = peek ptr
 data SlotInfo = SlotInfo {
     slotInfoDescription :: String,
     slotInfoManufacturerId :: String,
+    -- | bit flags indicating capabilities and status of the slot as defined in https://www.cryptsoft.com/pkcs11doc/v220/pkcs11__all_8h.html#aCK_SLOT_INFO
     slotInfoFlags :: Int,
     slotInfoHardwareVersion :: Version,
     slotInfoFirmwareVersion :: Version
@@ -208,6 +209,7 @@ data TokenInfo = TokenInfo {
     tokenInfoManufacturerId :: String,
     tokenInfoModel :: String,
     tokenInfoSerialNumber :: String,
+    -- | bit flags indicating capabilities and status of the device as defined in https://www.cryptsoft.com/pkcs11doc/v220/pkcs11__all_8h.html#aCK_TOKEN_INFO
     tokenInfoFlags :: Int--,
     --tokenInfoHardwareVersion :: Version,
     --tokenInfoFirmwareVersion :: Version
@@ -649,6 +651,9 @@ getSlotList (Library _ functionListPtr) active num = do
         else return $ map (fromIntegral) slots
 
 
+-- | Obtains information about a particular slot in the system
+--
+-- > slotInfo <- getSlotInfo lib slotId
 getSlotInfo :: Library -> SlotId -> IO SlotInfo
 getSlotInfo (Library _ functionListPtr) slotId = do
     (rv, slotInfo) <- getSlotInfo' functionListPtr slotId
@@ -657,6 +662,9 @@ getSlotInfo (Library _ functionListPtr) slotId = do
         else return slotInfo
 
 
+-- | Obtains information about a particular token in the system
+--
+-- > tokenInfo <- getTokenInfo lib slotId
 getTokenInfo :: Library -> SlotId -> IO TokenInfo
 getTokenInfo (Library _ functionListPtr) slotId = do
     (rv, slotInfo) <- getTokenInfo' functionListPtr slotId
@@ -1204,6 +1212,7 @@ unwrapKey mechType (Session sessionHandle functionListPtr) key wrappedKey templa
                             return unwrappedKey
 
 
+-- | Obtains a list of mechanism types supported by a token
 getMechanismList :: Library -> SlotId -> Int -> IO [Int]
 getMechanismList (Library _ functionListPtr) slotId maxMechanisms = do
     (rv, types) <- _getMechanismList functionListPtr slotId maxMechanisms
@@ -1212,7 +1221,7 @@ getMechanismList (Library _ functionListPtr) slotId maxMechanisms = do
         else return $ map (fromIntegral) types
 
 
--- | Retrieves mechanism info
+-- | Obtains information about a particular mechanism possibly supported by a token
 getMechanismInfo :: Library -> SlotId -> MechType -> IO MechInfo
 getMechanismInfo (Library _ functionListPtr) slotId mechId = do
     (rv, types) <- _getMechanismInfo functionListPtr slotId (fromEnum mechId)
