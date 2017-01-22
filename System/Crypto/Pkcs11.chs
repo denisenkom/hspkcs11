@@ -1303,8 +1303,6 @@ decrypt :: MechType -> Session -> ObjectHandle -> BS.ByteString -> IO BS.ByteStr
 decrypt mechType (Session sessionHandle functionListPtr) obj encData = do
     _decryptInit mechType (Session sessionHandle functionListPtr) obj
     unsafeUseAsCStringLen encData $ \(encDataPtr, encDataLen) -> do
-        putStrLn $ "in data len " ++ (show encDataLen)
-        putStrLn $ show encData
         allocaBytes encDataLen $ \outDataPtr -> do
             alloca $ \outDataLenPtr -> do
                 poke outDataLenPtr (fromIntegral encDataLen)
