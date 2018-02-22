@@ -40,7 +40,7 @@ module System.Crypto.Pkcs11 (
     setPin,
 
     -- * Mechanisms
-    MechType(RsaPkcsKeyPairGen,RsaPkcs,AesEcb,AesCbc,AesMac,AesMacGeneral,AesCbcPad,AesCtr),
+    MechType(RsaPkcsKeyPairGen,RsaPkcs,AesEcb,AesCbc,AesMac,AesMacGeneral,AesCbcPad,AesCtr,AesKeyGen),
     MechInfo,
     getMechanismList,
     getMechanismInfo,
@@ -58,7 +58,7 @@ module System.Crypto.Pkcs11 (
 
     -- * Object attributes
     ObjectHandle,
-    Attribute(Class,Label,KeyType,Modulus,ModulusBits,PublicExponent,Token,Decrypt),
+    Attribute(Class,Label,KeyType,Modulus,ModulusBits,PublicExponent,Token,Decrypt,ValueLen),
     ClassType(PrivateKey,SecretKey),
     KeyTypeValue(RSA,DSA,DH,ECDSA,EC,AES),
     -- ** Searching objects
@@ -76,6 +76,7 @@ module System.Crypto.Pkcs11 (
     getPublicExponent,
 
     -- * Key generation
+    generateKey,
     generateKeyPair,
 
     -- * Key wrapping/unwrapping
@@ -442,6 +443,32 @@ _login functionListPtr session userType pin = do
         return (fromIntegral res)
 
 
+generateKey' :: FunctionListPtr -> SessionHandle -> MechType -> [Attribute] -> IO (Rv, ObjectHandle)
+generateKey' funcListPtr sessHandle mechType attribs = do
+    alloca $ \keyHandlePtr -> do
+        alloca $ \mechPtr -> do
+            poke mechPtr (Mech {mechType = mechType, mechParamPtr = nullPtr, mechParamSize = 0})
+            _withAttribs attribs $ \attribsPtr -> do
+                res <- {#call unsafe CK_FUNCTION_LIST.C_GenerateKey#} funcListPtr sessHandle mechPtr attribsPtr (fromIntegral $ length attribs) keyHandlePtr
+                keyHandle <- peek keyHandlePtr
+                return (fromIntegral res, fromIntegral keyHandle)
+
+-- {#fun unsafe CK_FUNCTION_LIST.C_GenerateKey as generateKey'
+--  {`FunctionListPtr',
+--   `SessionHandle',
+--   `MechType',
+--   _withAttribs* `[Attribute]'&,
+--   alloca- `ObjectHandle'} -> `Rv' fromIntegral#}
+
+
+generateKey :: Session -> MechType -> [Attribute] -> IO ObjectHandle
+generateKey (Session sessHandle funcListPtr) mechType attribs = do
+    (rv, keyHandle) <- generateKey' funcListPtr sessHandle mechType attribs
+    if rv /= 0
+        then fail $ "failed to generate key: " ++ (rvToStr rv)
+        else return keyHandle
+
+
 _generateKeyPair :: FunctionListPtr -> SessionHandle -> MechType -> [Attribute] -> [Attribute] -> IO (Rv, ObjectHandle, ObjectHandle)
 _generateKeyPair functionListPtr session mechType pubAttrs privAttrs = do
     alloca $ \pubKeyHandlePtr -> do
@@ -686,6 +713,7 @@ data Attribute = Class ClassType
     | Sign Bool
     | Modulus Integer
     | PublicExponent Integer
+    | ValueLen Integer
     deriving (Show)
 
 data LlAttribute = LlAttribute {
@@ -714,6 +742,7 @@ _attrType (KeyType _) = KeyTypeType
 _attrType (Label _) = LabelType
 _attrType (ModulusBits _) = ModulusBitsType
 _attrType (Token _) = TokenType
+_attrType (ValueLen _) = ValueLenType
 
 
 _valueSize :: Attribute -> Int
@@ -722,6 +751,7 @@ _valueSize (KeyType _) = {#sizeof CK_KEY_TYPE#}
 _valueSize (Label l) = BU8.length $ BU8.fromString l
 _valueSize (ModulusBits _) = {#sizeof CK_ULONG#}
 _valueSize (Token _) = {#sizeof CK_BBOOL#}
+_valueSize (ValueLen _) = {#sizeof CK_ULONG#}
 
 
 _pokeValue :: Attribute -> Ptr () -> IO ()
@@ -730,6 +760,7 @@ _pokeValue (KeyType k) ptr = poke (castPtr ptr :: Ptr {#type CK_KEY_TYPE#}) (fro
 _pokeValue (Label l) ptr = unsafeUseAsCStringLen (BU8.fromString l) $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
 _pokeValue (ModulusBits l) ptr = poke (castPtr ptr :: Ptr {#type CK_ULONG#}) (fromIntegral l :: {#type CK_KEY_TYPE#})
 _pokeValue (Token b) ptr = poke (castPtr ptr :: Ptr {#type CK_BBOOL#}) (fromBool b :: {#type CK_BBOOL#})
+_pokeValue (ValueLen l) ptr = poke (castPtr ptr :: Ptr {#type CK_ULONG#}) (fromIntegral l :: {#type CK_ULONG#})
 
 
 _pokeValues :: [Attribute] -> Ptr () -> IO ()

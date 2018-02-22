@@ -10,11 +10,11 @@ import qualified Data.ByteString.Lazy as BSL
 import Numeric
 
 
-generateKey :: Library -> BU8.ByteString -> String -> IO (ObjectHandle, ObjectHandle)
-generateKey lib pin label = do
-    withSession lib 0 True $ \sess -> do
-        login sess User pin
-        generateKeyPair sess RsaPkcsKeyPairGen [ModulusBits 2048, Label label, Token True] [Label label, Token True]
+-- generateKey :: Library -> BU8.ByteString -> String -> IO (ObjectHandle, ObjectHandle)
+-- generateKey lib pin label = do
+--     withSession lib 0 True $ \sess -> do
+--         login sess User pin
+--         generateKeyPair sess RsaPkcsKeyPairGen [ModulusBits 2048, Label label, Token True] [Label label, Token True]
 
 
 
@@ -61,6 +61,12 @@ main = do
         putStrLn "getSessionInfo"
         sessInfo <- getSessionInfo sess
         putStrLn $ show sessInfo
+        login sess User (BU8.fromString "123abc_")
+        putStrLn "generate key"
+        keyHandle <- generateKey sess AesKeyGen [ValueLen 16, Token True, Label "testaeskey"]
+        putStrLn $ "generated key " ++ (show keyHandle)
+        putStrLn "deleting object"
+        deleteObject sess keyHandle
 
     putStrLn "open read-only session"
     withSession lib slotId False $ \sess -> do
