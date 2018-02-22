@@ -66,7 +66,7 @@ main = do
         keyHandle <- generateKey sess AesKeyGen [ValueLen 16, Token True, Label "testaeskey"]
         putStrLn $ "generated key " ++ (show keyHandle)
         putStrLn "deleting object"
-        deleteObject sess keyHandle
+        destroyObject sess keyHandle
 
     putStrLn "open read-only session"
     withSession lib slotId False $ \sess -> do

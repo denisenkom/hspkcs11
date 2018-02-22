@@ -61,6 +61,7 @@ module System.Crypto.Pkcs11 (
     Attribute(Class,Label,KeyType,Modulus,ModulusBits,PublicExponent,Token,Decrypt,ValueLen),
     ClassType(PrivateKey,SecretKey),
     KeyTypeValue(RSA,DSA,DH,ECDSA,EC,AES),
+    destroyObject,
     -- ** Searching objects
     findObjects,
     -- ** Reading object attributes
@@ -117,8 +118,13 @@ _rwSession = {#const CKF_RW_SESSION#} :: Int
 rsaPkcsKeyPairGen = {#const CKM_RSA_PKCS_KEY_PAIR_GEN#} :: Int
 
 type ObjectHandle = {#type CK_OBJECT_HANDLE#}
+{#typedef CK_OBJECT_HANDLE ObjectHandle#}
+{#default in `ObjectHandle' [CK_OBJECT_HANDLE] fromIntegral#}
+{#default out `ObjectHandle' [CK_OBJECT_HANDLE] fromIntegral#}
 type SlotId = Int
 type Rv = {#type CK_RV#}
+{#typedef CK_RV Rv#}
+{#default out `Rv' [CK_RV] fromIntegral#}
 type CK_BBOOL = {#type CK_BBOOL#}
 type CK_BYTE = {#type CK_BYTE#}
 type CK_FLAGS = {#type CK_FLAGS#}
@@ -441,6 +447,18 @@ _login functionListPtr session userType pin = do
     unsafeUseAsCStringLen pin $ \(pinPtr, pinLen) -> do
         res <- {#call unsafe CK_FUNCTION_LIST.C_Login#} functionListPtr session (fromIntegral $ fromEnum userType) (castPtr pinPtr) (fromIntegral pinLen)
         return (fromIntegral res)
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_DestroyObject as destroyObject'
+ {`FunctionListPtr',
+  `SessionHandle',
+  `ObjectHandle'} ->  `Rv'#}
+
+destroyObject (Session sessHandle funcListPtr) objectHandle = do
+    rv <- destroyObject' funcListPtr sessHandle objectHandle
+    if rv /= 0
+        then fail $ "failed to destroy object: " ++ (rvToStr rv)
+        else return ()
 
 
 generateKey' :: FunctionListPtr -> SessionHandle -> MechType -> [Attribute] -> IO (Rv, ObjectHandle)
