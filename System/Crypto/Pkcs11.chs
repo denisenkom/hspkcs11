@@ -27,7 +27,7 @@ module System.Crypto.Pkcs11 (
     slotInfoHardwareVersion,
     slotInfoFirmwareVersion,
 
-    -- ** Reading token information
+    -- ** Working with tokens
     TokenInfo,
     getTokenInfo,
     tokenInfoLabel,
@@ -35,6 +35,8 @@ module System.Crypto.Pkcs11 (
     tokenInfoModel,
     tokenInfoSerialNumber,
     tokenInfoFlags,
+    initToken,
+    initPin,
 
     -- * Mechanisms
     MechType(RsaPkcsKeyPairGen,RsaPkcs,AesEcb,AesCbc,AesMac,AesMacGeneral,AesCbcPad,AesCtr),
@@ -305,6 +307,22 @@ getSlotList' functionListPtr active num = do
       arrayLen <- peek arrayLenPtr
       slots <- peekArray (fromIntegral arrayLen) array
       return (fromIntegral res, slots)
+
+
+initToken' :: FunctionListPtr -> Int -> BU8.ByteString -> String -> IO (Rv)
+initToken' funcListPtr slotId pin label = do
+    unsafeUseAsCStringLen pin $ \(pinPtr, pinLen) -> do
+        allocaArray 32 $ \labelArray -> do
+            pokeArray labelArray (map CUChar (BS.unpack $ BU8.fromString label))
+            res <- {#call unsafe CK_FUNCTION_LIST.C_InitToken#} funcListPtr (fromIntegral slotId) (castPtr pinPtr) (fromIntegral pinLen) labelArray
+            return (fromIntegral res)
+
+
+initPin' :: FunctionListPtr -> CULong -> BU8.ByteString -> IO (Rv)
+initPin' funcListPtr sessHandle pin = do
+    unsafeUseAsCStringLen pin $ \(pinPtr, pinLen) -> do
+        res <- {#call unsafe CK_FUNCTION_LIST.C_InitPIN#} funcListPtr sessHandle (castPtr pinPtr) (fromIntegral pinLen)
+        return (fromIntegral res)
 
 
 {#fun unsafe CK_FUNCTION_LIST.C_GetSlotInfo as getSlotInfo'
@@ -776,6 +794,14 @@ getSlotList (Library _ functionListPtr) active num = do
         else return $ map (fromIntegral) slots
 
 
+initToken :: Library -> SlotId -> BU8.ByteString -> String -> IO ()
+initToken (Library _ funcListPtr) slotId pin label = do
+    rv <- initToken' funcListPtr slotId pin label
+    if rv /= 0
+        then fail $ "failed to initialize token " ++ (rvToStr rv)
+        else return ()
+
+
 -- | Obtains information about a particular slot in the system
 --
 -- > slotInfo <- getSlotInfo lib slotId
@@ -914,6 +940,14 @@ getPublicExponent :: Session -> ObjectHandle -> IO Integer
 getPublicExponent sess objHandle = do
     (PublicExponent v) <- getObjectAttr sess objHandle PublicExponentType
     return v
+
+
+initPin :: Session -> BU8.ByteString -> IO ()
+initPin (Session sessHandle funcListPtr) pin = do
+    rv <- initPin' funcListPtr sessHandle pin
+    if rv /= 0
+        then fail $ "initPin failed: " ++ (rvToStr rv)
+        else return ()
 
 
 login :: Session -> UserType -> BU8.ByteString -> IO ()

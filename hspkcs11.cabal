@@ -15,7 +15,7 @@ extra-source-files: include/*.h
 library
     build-tools:    c2hs
     build-depends:
-        base < 4.10,
+        base,
         unix,
         utf8-string,
         bytestring,
@@ -32,7 +32,7 @@ executable pkcs11-tests
     Include-dirs: include
     other-modules:      System.Crypto.Pkcs11
     build-depends:
-        base < 4.10,
+        base,
         testpack,
         unix,
         utf8-string,

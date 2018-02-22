@@ -19,32 +19,45 @@ generateKey lib pin label = do
 
 
 main = do
-    lib <- loadLibrary "/Library/Frameworks/eToken.framework/Versions/Current/libeToken.dylib"
+    lib <- loadLibrary "/usr/local/Cellar/softhsm/2.3.0/lib/softhsm/libsofthsm2.so"
     info <- getInfo lib
     putStrLn(show info)
     slots <- getSlotList lib True 10
-    putStrLn(show slots)
+    putStrLn("slots: " ++ show slots)
+    let slotId = head slots
 
     putStrLn "getSlotInfo"
-    slotInfo <- getSlotInfo lib 0
+    slotInfo <- getSlotInfo lib slotId
     putStrLn(show slotInfo)
 
     putStrLn "getTokenInfo"
-    tokenInfo <- getTokenInfo lib 0
+    tokenInfo <- getTokenInfo lib slotId
     putStrLn(show tokenInfo)
 
     putStrLn "getMechanismList"
-    mechanisms <- getMechanismList lib 0 100
+    mechanisms <- getMechanismList lib slotId 100
     putStrLn $ show mechanisms
 
-    mechInfo <- getMechanismInfo lib 0 RsaPkcsKeyPairGen
+    mechInfo <- getMechanismInfo lib slotId RsaPkcsKeyPairGen
     putStrLn $ show mechInfo
+
+    putStrLn "initToken"
+    initToken lib slotId (BU8.fromString "123abc_") "label"
 
     --putStrLn "generating key"
     --(pubKeyHandle, privKeyHandle) <- generateKey lib (BU8.fromString "123abc_") "key"
     --putStrLn (show pubKeyHandle)
 
-    withSession lib 0 False $ \sess -> do
+    putStrLn "open writable session"
+    withSession lib slotId True $ \sess -> do
+        putStrLn "login as SO"
+        login sess SecurityOfficer (BU8.fromString "123abc_")
+        putStrLn "init token pin"
+        initPin sess "123abc_"
+
+    putStrLn "open read-only session"
+    withSession lib slotId False $ \sess -> do
+        putStrLn "token login"
         login sess User (BU8.fromString "123abc_")
         objects <- findObjects sess [Class PrivateKey, Label "key"]
         putStrLn $ show objects
