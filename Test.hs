@@ -53,7 +53,14 @@ main = do
         putStrLn "login as SO"
         login sess SecurityOfficer (BU8.fromString "123abc_")
         putStrLn "init token pin"
-        initPin sess "123abc_"
+        initPin sess "testpin"
+        putStrLn "logout"
+        logout sess
+        putStrLn "setPin"
+        setPin sess "testpin" "123abc_"
+        putStrLn "getSessionInfo"
+        sessInfo <- getSessionInfo sess
+        putStrLn $ show sessInfo
 
     putStrLn "open read-only session"
     withSession lib slotId False $ \sess -> do

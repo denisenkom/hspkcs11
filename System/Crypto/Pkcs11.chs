@@ -37,6 +37,7 @@ module System.Crypto.Pkcs11 (
     tokenInfoFlags,
     initToken,
     initPin,
+    setPin,
 
     -- * Mechanisms
     MechType(RsaPkcsKeyPairGen,RsaPkcs,AesEcb,AesCbc,AesMac,AesMacGeneral,AesCbcPad,AesCtr),
@@ -51,6 +52,7 @@ module System.Crypto.Pkcs11 (
     Session,
     UserType(User,SecurityOfficer,ContextSpecific),
     withSession,
+    getSessionInfo,
     login,
     logout,
 
@@ -123,11 +125,15 @@ type GetFunctionListFunPtr = {#type CK_C_GetFunctionList#}
 type GetSlotListFunPtr = {#type CK_C_GetSlotList#}
 type NotifyFunPtr = {#type CK_NOTIFY#}
 type SessionHandle = {#type CK_SESSION_HANDLE#}
+{#typedef CK_SESSION_HANDLE SessionHandle#}
+{#default in `SessionHandle' [CK_SESSION_HANDLE] fromIntegral#}
+{#default out `SessionHandle' [CK_SESSION_HANDLE] fromIntegral#}
 
 {#pointer *CK_FUNCTION_LIST as FunctionListPtr#}
 {#pointer *CK_INFO as InfoPtr -> Info#}
 {#pointer *CK_SLOT_INFO as SlotInfoPtr -> SlotInfo#}
 {#pointer *CK_TOKEN_INFO as TokenInfoPtr -> TokenInfo#}
+{#pointer *CK_SESSION_INFO as SessionInfoPtr -> SessionInfo#}
 {#pointer *CK_ATTRIBUTE as LlAttributePtr -> LlAttribute#}
 {#pointer *CK_MECHANISM_INFO as MechInfoPtr -> MechInfo#}
 {#pointer *CK_MECHANISM as MechPtr -> Mech#}
@@ -289,6 +295,24 @@ instance Storable Mech where
         poke (p `plusPtr` ({#sizeof CK_MECHANISM_TYPE#} + {#sizeof CK_VOID_PTR#})) (mechParamSize x)
 
 
+data SessionInfo = SessionInfo {
+    slotId :: SlotId,
+    state :: CULong,
+    flags :: CULong,
+    deviceError :: CULong
+} deriving (Show)
+
+instance Storable SessionInfo where
+    sizeOf _ = {#sizeof CK_SESSION_INFO#}
+    alignment _ = 1
+    peek p = SessionInfo
+        <$> liftM fromIntegral ({#get CK_SESSION_INFO->slotID#} p)
+        <*> {#get CK_SESSION_INFO->state#} p
+        <*> {#get CK_SESSION_INFO->flags#} p
+        <*> {#get CK_SESSION_INFO->ulDeviceError#} p
+    poke p x = do
+        error "not implemented"
+
 
 {#fun unsafe CK_FUNCTION_LIST.C_Initialize as initialize
  {`FunctionListPtr',
@@ -323,6 +347,29 @@ initPin' funcListPtr sessHandle pin = do
     unsafeUseAsCStringLen pin $ \(pinPtr, pinLen) -> do
         res <- {#call unsafe CK_FUNCTION_LIST.C_InitPIN#} funcListPtr sessHandle (castPtr pinPtr) (fromIntegral pinLen)
         return (fromIntegral res)
+
+
+setPin' :: FunctionListPtr -> CULong -> BU8.ByteString -> BU8.ByteString -> IO (Rv)
+setPin' funcListPtr sessHandle oldPin newPin = do
+    unsafeUseAsCStringLen oldPin $ \(oldPinPtr, oldPinLen) -> do
+        unsafeUseAsCStringLen newPin $ \(newPinPtr, newPinLen) -> do
+            res <- {#call unsafe CK_FUNCTION_LIST.C_SetPIN#} funcListPtr sessHandle (castPtr oldPinPtr)
+                (fromIntegral oldPinLen) (castPtr newPinPtr) (fromIntegral newPinLen)
+            return (fromIntegral res)
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_GetSessionInfo as getSessionInfo'
+  {`FunctionListPtr',
+   `SessionHandle',
+   alloca- `SessionInfo' peek* } -> `Rv' fromIntegral
+#}
+
+
+getSessionInfo (Session sessHandle funListPtr) = do
+    (rv, sessInfo) <- getSessionInfo' funListPtr sessHandle
+    if rv /= 0
+        then fail $ "failed to get session info: " ++ (rvToStr rv)
+        else return sessInfo
 
 
 {#fun unsafe CK_FUNCTION_LIST.C_GetSlotInfo as getSlotInfo'
@@ -947,6 +994,14 @@ initPin (Session sessHandle funcListPtr) pin = do
     rv <- initPin' funcListPtr sessHandle pin
     if rv /= 0
         then fail $ "initPin failed: " ++ (rvToStr rv)
+        else return ()
+
+
+setPin :: Session -> BU8.ByteString -> BU8.ByteString -> IO ()
+setPin (Session sessHandle funcListPtr) oldPin newPin = do
+    rv <- setPin' funcListPtr sessHandle oldPin newPin
+    if rv /= 0
+        then fail $ "setPin failed: " ++ (rvToStr rv)
         else return ()
 
 
