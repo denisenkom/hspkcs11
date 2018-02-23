@@ -97,6 +97,12 @@ main = do
         putStrLn $ show randData
         putStrLn "set attributes"
         setAttributes sess aesKeyHandle [Extractable False]
+        putStrLn "get object size"
+        aesKeySize <- getObjectSize sess aesKeyHandle
+        putStrLn $ show $ fromIntegral aesKeySize
+        putStrLn "copy object"
+        copiedObjHandle <- copyObject sess aesKeyHandle []
+        putStrLn $ show copiedObjHandle
         putStrLn "deleting object"
         destroyObject sess aesKeyHandle
         putStrLn "digestInit"

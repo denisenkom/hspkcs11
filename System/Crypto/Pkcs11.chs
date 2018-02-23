@@ -63,6 +63,8 @@ module System.Crypto.Pkcs11 (
     ClassType(PrivateKey,SecretKey),
     KeyTypeValue(RSA,DSA,DH,ECDSA,EC,AES),
     destroyObject,
+    copyObject,
+    getObjectSize,
     -- ** Searching objects
     findObjects,
     -- ** Reading object attributes
@@ -1008,6 +1010,37 @@ generateKeyPair (Session sessionHandle functionListPtr) mechType pubKeyAttrs pri
     if rv /= 0
         then fail $ "failed to generate key pair: " ++ (rvToStr rv)
         else return (pubKeyHandle, privKeyHandle)
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_CopyObject as copyObject'
+ {`FunctionListPtr',
+  `SessionHandle',
+  `ObjectHandle',
+  `LlAttributePtr',
+  `CULong',
+  alloca- `ObjectHandle' peek*} -> `Rv'
+#}
+
+copyObject (Session sessHandle funcListPtr) objHandle attribs = do
+    _withAttribs attribs $ \attribsPtr -> do
+        (rv, createdHandle) <- copyObject' funcListPtr sessHandle objHandle attribsPtr (fromIntegral $ length attribs)
+        if rv /= 0
+            then fail $ "failed to copy object: " ++ (rvToStr rv)
+            else return createdHandle
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_GetObjectSize as getObjectSize'
+ {`FunctionListPtr',
+  `SessionHandle',
+  `ObjectHandle',
+  alloca- `CULong' peek*} -> `Rv'
+#}
+
+getObjectSize (Session sessHandle funcListPtr) objHandle = do
+    (rv, objSize) <- getObjectSize' funcListPtr sessHandle objHandle
+    if rv /= 0
+        then fail $ "failed to get object size: " ++ (rvToStr rv)
+        else return objSize
 
 
 _getAttr :: Session -> ObjectHandle -> AttributeType -> Ptr x -> IO ()
