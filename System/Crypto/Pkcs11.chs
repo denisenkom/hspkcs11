@@ -59,7 +59,7 @@ module System.Crypto.Pkcs11 (
 
     -- * Object attributes
     ObjectHandle,
-    Attribute(Class,Label,KeyType,Modulus,ModulusBits,PublicExponent,Token,Decrypt,ValueLen),
+    Attribute(Class,Label,KeyType,Modulus,ModulusBits,PublicExponent,Token,Decrypt,ValueLen,Extractable),
     ClassType(PrivateKey,SecretKey),
     KeyTypeValue(RSA,DSA,DH,ECDSA,EC,AES),
     destroyObject,
@@ -82,6 +82,7 @@ module System.Crypto.Pkcs11 (
     generateKeyPair,
 
     -- * Key wrapping/unwrapping
+    wrapKey,
     unwrapKey,
 
     -- * Encryption/decryption
@@ -589,6 +590,7 @@ rvToStr {#const CKR_USER_TOO_MANY_TYPES#} = "cannot login user, somebody should 
 rvToStr {#const CKR_USER_TYPE_INVALID#} = "invalid value for user type"
 rvToStr {#const CKR_WRAPPED_KEY_INVALID#} = "wrapped key invalid"
 rvToStr {#const CKR_WRAPPED_KEY_LEN_RANGE#} = "wrapped key length not in range"
+rvToStr {#const CKR_KEY_UNEXTRACTABLE#} = "key unextractable"
 rvToStr rv = "unknown value for error " ++ (show rv)
 
 
@@ -746,6 +748,7 @@ data Attribute = Class ClassType
     | Modulus Integer
     | PublicExponent Integer
     | ValueLen Integer
+    | Extractable Bool
     deriving (Show)
 
 data LlAttribute = LlAttribute {
@@ -775,6 +778,7 @@ _attrType (Label _) = LabelType
 _attrType (ModulusBits _) = ModulusBitsType
 _attrType (Token _) = TokenType
 _attrType (ValueLen _) = ValueLenType
+_attrType (Extractable _) = ExtractableType
 
 
 _valueSize :: Attribute -> Int
@@ -784,6 +788,7 @@ _valueSize (Label l) = BU8.length $ BU8.fromString l
 _valueSize (ModulusBits _) = {#sizeof CK_ULONG#}
 _valueSize (Token _) = {#sizeof CK_BBOOL#}
 _valueSize (ValueLen _) = {#sizeof CK_ULONG#}
+_valueSize (Extractable _) = {#sizeof CK_BBOOL#}
 
 
 _pokeValue :: Attribute -> Ptr () -> IO ()
@@ -793,6 +798,7 @@ _pokeValue (Label l) ptr = unsafeUseAsCStringLen (BU8.fromString l) $ \(src, len
 _pokeValue (ModulusBits l) ptr = poke (castPtr ptr :: Ptr {#type CK_ULONG#}) (fromIntegral l :: {#type CK_KEY_TYPE#})
 _pokeValue (Token b) ptr = poke (castPtr ptr :: Ptr {#type CK_BBOOL#}) (fromBool b :: {#type CK_BBOOL#})
 _pokeValue (ValueLen l) ptr = poke (castPtr ptr :: Ptr {#type CK_ULONG#}) (fromIntegral l :: {#type CK_ULONG#})
+_pokeValue (Extractable b) ptr = poke (castPtr ptr :: Ptr {#type CK_BBOOL#}) (fromBool b :: {#type CK_BBOOL#})
 
 
 _pokeValues :: [Attribute] -> Ptr () -> IO ()
@@ -1566,11 +1572,29 @@ verify (Session sessHandle funcListPtr) signData signatureData = do
                _ -> fail $ "failed to verify: " ++ (rvToStr rv)
 
 
-unwrapKey :: MechType -> Session -> ObjectHandle -> BS.ByteString -> [Attribute] -> IO ObjectHandle
-unwrapKey mechType (Session sessionHandle functionListPtr) key wrappedKey template = do
+{#fun unsafe CK_FUNCTION_LIST.C_WrapKey as wrapKey'
+ {`FunctionListPtr',
+  `SessionHandle',
+  with* `Mech',
+  `ObjectHandle',
+  `ObjectHandle',
+  castPtr `Ptr CUChar',
+  with* `CULong' peek*} -> `Rv'
+#}
+
+wrapKey mech (Session sessHandle funcListPtr) wrappingKey key dataLen = do
+    allocaBytes (fromIntegral dataLen) $ \dataPtr -> do
+        (rv, outDataLen) <- wrapKey' funcListPtr sessHandle mech wrappingKey key dataPtr dataLen
+        if rv /= 0
+            then fail $ "failed to wrap key: " ++ (rvToStr rv)
+            else BS.packCStringLen (castPtr dataPtr, fromIntegral outDataLen)
+
+
+unwrapKey :: Mech -> Session -> ObjectHandle -> BS.ByteString -> [Attribute] -> IO ObjectHandle
+unwrapKey mech (Session sessionHandle functionListPtr) key wrappedKey template = do
     _withAttribs template $ \attribsPtr -> do
         alloca $ \mechPtr -> do
-            poke mechPtr (Mech {mechType = mechType, mechParamPtr = nullPtr, mechParamSize = 0})
+            poke mechPtr mech
             unsafeUseAsCStringLen wrappedKey $ \(wrappedKeyPtr, wrappedKeyLen) -> do
                 alloca $ \unwrappedKeyPtr -> do
                     rv <- {#call unsafe CK_FUNCTION_LIST.C_UnwrapKey#} functionListPtr sessionHandle mechPtr key (castPtr wrappedKeyPtr) (fromIntegral wrappedKeyLen) attribsPtr (fromIntegral $ length template) unwrappedKeyPtr

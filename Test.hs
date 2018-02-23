@@ -63,19 +63,22 @@ main = do
         putStrLn $ show sessInfo
         login sess User (BU8.fromString "123abc_")
         putStrLn "generate key"
-        keyHandle <- generateKey sess AesKeyGen [ValueLen 16, Token True, Label "testaeskey"]
-        putStrLn $ "generated key " ++ (show keyHandle)
+        aesKeyHandle <- generateKey sess AesKeyGen [ValueLen 16, Token True, Label "testaeskey", Extractable True]
+        putStrLn $ "generated key " ++ (show aesKeyHandle)
         putStrLn "encryption"
-        encData <- encrypt AesEcb sess keyHandle (BS.pack [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
+        encData <- encrypt AesEcb sess aesKeyHandle (BS.pack [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
         putStrLn $ show encData
         putStrLn "decryption"
-        decData <- decrypt AesEcb sess keyHandle encData
+        decData <- decrypt AesEcb sess aesKeyHandle encData
         putStrLn $ show decData
-        putStrLn "deleting object"
-        destroyObject sess keyHandle
         putStrLn "generating key pair"
         (pubKeyHandle, privKeyHandle) <- generateKeyPair sess RsaPkcsKeyPairGen [ModulusBits 2048, Token True, Label "key"] [Token True, Label "key"]
         putStrLn $ "generated " ++ (show pubKeyHandle) ++ " and " ++ (show privKeyHandle)
+        putStrLn "wrap key"
+        wrappedAesKey <- wrapKey (simpleMech RsaPkcs) sess pubKeyHandle aesKeyHandle 300
+        putStrLn $ show wrappedAesKey
+        putStrLn "unwrap key"
+        unwrappedAesKey <- unwrapKey (simpleMech RsaPkcs) sess privKeyHandle wrappedAesKey [Class SecretKey, KeyType AES]
         putStrLn "signInit"
         signInit sess (simpleMech RsaPkcs) privKeyHandle
         putStrLn "sign"
@@ -92,6 +95,8 @@ main = do
         putStrLn "generateRandom"
         randData <- generateRandom sess 10
         putStrLn $ show randData
+        putStrLn "deleting object"
+        destroyObject sess aesKeyHandle
 
     putStrLn "open read-only session"
     withSession lib slotId False $ \sess -> do
@@ -124,7 +129,7 @@ main = do
         --putStrLn $ show encText
         --let encTextLen = BS.length encText
         --putStrLn $ show encTextLen
-        unwrappedKeyHandle <- unwrapKey RsaPkcs sess objId (BSL.toStrict encKey) [Class SecretKey, KeyType AES]
+        unwrappedKeyHandle <- unwrapKey (simpleMech RsaPkcs) sess objId (BSL.toStrict encKey) [Class SecretKey, KeyType AES]
 
         let aesKey = AESmod.initAES aesKeyBs
             encryptedMessage = AESmod.encryptECB aesKey "hello00000000000"
