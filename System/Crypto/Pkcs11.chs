@@ -40,7 +40,7 @@ module System.Crypto.Pkcs11 (
     setPin,
 
     -- * Mechanisms
-    MechType(RsaPkcsKeyPairGen,RsaPkcs,AesEcb,AesCbc,AesMac,AesMacGeneral,AesCbcPad,AesCtr,AesKeyGen),
+    MechType(RsaPkcsKeyPairGen,RsaPkcs,AesEcb,AesCbc,AesMac,AesMacGeneral,AesCbcPad,AesCtr,AesKeyGen,Sha256),
     MechInfo,
     getMechanismList,
     getMechanismInfo,
@@ -88,6 +88,10 @@ module System.Crypto.Pkcs11 (
     -- * Encryption/decryption
     decrypt,
     encrypt,
+
+    -- * Digest
+    digestInit,
+    digest,
 
     -- * Signing
     signInit,
@@ -1500,6 +1504,39 @@ encrypt mechType (Session sessionHandle functionListPtr) obj encData = do
                         return res
 
 
+{#fun unsafe CK_FUNCTION_LIST.C_DigestInit as digestInit'
+ {`FunctionListPtr',
+  `SessionHandle',
+  with* `Mech'} -> `Rv'
+#}
+
+digestInit :: Mech -> Session -> IO ()
+digestInit mech (Session sessHandle funcListPtr) = do
+    rv <- digestInit' funcListPtr sessHandle mech
+    if rv /= 0
+        then fail $ "failed to initialize digest operation: " ++ (rvToStr rv)
+        else return ()
+
+{#fun unsafe CK_FUNCTION_LIST.C_Digest as digest'
+ {`FunctionListPtr',
+  `SessionHandle',
+  unsafeUseAsCUCharPtr* `BS.ByteString',
+  `CULong',
+  castPtr `Ptr CUChar',
+  with* `CULong' peek*} -> `Rv'
+#}
+
+digest :: Session -> BS.ByteString -> CULong -> IO (BS.ByteString)
+digest (Session sessHandle funcListPtr) digestData outLen = do
+    with outLen $ \outLenPtr -> do
+        allocaBytes (fromIntegral outLen) $ \outPtr -> do
+            (rv, outResLen) <- digest' funcListPtr sessHandle digestData (fromIntegral $ BS.length digestData) outPtr outLen
+            if rv /= 0
+                then fail $ "failed to digest: " ++ (rvToStr rv)
+                else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
+
+
+
 {#fun unsafe CK_FUNCTION_LIST.C_SignInit as signInit'
  {`FunctionListPtr',
   `SessionHandle',
@@ -1523,8 +1560,8 @@ unsafeUseAsCUCharPtr bs fn =
 #}
 
 
-signInit :: Session -> Mech -> ObjectHandle -> IO ()
-signInit (Session sessHandle funcListPtr) mech objHandle = do
+signInit :: Mech -> Session -> ObjectHandle -> IO ()
+signInit mech (Session sessHandle funcListPtr) objHandle = do
     rv <- signInit' funcListPtr sessHandle mech objHandle
     if rv /= 0
         then fail $ "failed to initialize signing operation: " ++ (rvToStr rv)

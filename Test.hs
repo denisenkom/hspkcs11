@@ -80,7 +80,7 @@ main = do
         putStrLn "unwrap key"
         unwrappedAesKey <- unwrapKey (simpleMech RsaPkcs) sess privKeyHandle wrappedAesKey [Class SecretKey, KeyType AES]
         putStrLn "signInit"
-        signInit sess (simpleMech RsaPkcs) privKeyHandle
+        signInit (simpleMech RsaPkcs) sess privKeyHandle
         putStrLn "sign"
         let signedData = BS.pack [0,0,0,0]
         signature <- sign sess signedData 1000
@@ -97,6 +97,11 @@ main = do
         putStrLn $ show randData
         putStrLn "deleting object"
         destroyObject sess aesKeyHandle
+        putStrLn "digestInit"
+        digestInit (simpleMech Sha256) sess
+        putStrLn "digest"
+        digestedData <- digest sess signedData 1000
+        putStrLn $ show digestedData
 
     putStrLn "open read-only session"
     withSession lib slotId False $ \sess -> do
