@@ -93,6 +93,8 @@ main = do
         putStrLn "verify"
         verRes <- verify sess signedData signature
         putStrLn $ "verify result " ++ (show verRes)
+        --putStrLn "signRecoverInit"
+        --signRecoverInit (simpleMech Rsa9796) sess privKeyHandle
         putStrLn "seedRandom"
         seedRandom sess signedData
         putStrLn "generateRandom"

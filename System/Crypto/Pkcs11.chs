@@ -40,7 +40,7 @@ module System.Crypto.Pkcs11 (
     setPin,
 
     -- * Mechanisms
-    MechType(RsaPkcsKeyPairGen,RsaPkcs,AesEcb,AesCbc,AesMac,AesMacGeneral,AesCbcPad,AesCtr,AesKeyGen,Sha256),
+    MechType(RsaPkcsKeyPairGen,RsaPkcs,Rsa9796,AesEcb,AesCbc,AesMac,AesMacGeneral,AesCbcPad,AesCtr,AesKeyGen,Sha256),
     MechInfo,
     getMechanismList,
     getMechanismInfo,
@@ -103,6 +103,8 @@ module System.Crypto.Pkcs11 (
     -- * Signing
     signInit,
     sign,
+    signRecoverInit,
+    signRecover,
     verifyInit,
     verify,
 
@@ -1678,6 +1680,39 @@ sign (Session sessHandle funcListPtr) signData outLen = do
             (rv, outResLen) <- sign' funcListPtr sessHandle signData (fromIntegral $ BS.length signData) outPtr outLen
             if rv /= 0
                 then fail $ "failed to sign: " ++ (rvToStr rv)
+                else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_SignRecoverInit as signRecoverInit'
+ {`FunctionListPtr',
+  `SessionHandle',
+  with* `Mech',
+  `ObjectHandle'} -> `Rv'
+#}
+
+signRecoverInit :: Mech -> Session -> ObjectHandle -> IO ()
+signRecoverInit mech (Session sessHandle funcListPtr) objHandle = do
+    rv <- signRecoverInit' funcListPtr sessHandle mech objHandle
+    if rv /= 0
+        then fail $ "failed to initialize signing with recovery operation: " ++ (rvToStr rv)
+        else return ()
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_SignRecover as signRecover'
+ {`FunctionListPtr',
+  `SessionHandle',
+  unsafeUseAsCUCharPtr* `BS.ByteString',
+  `CULong',
+  castPtr `Ptr CUChar',
+  with* `CULong' peek*} -> `Rv'
+#}
+
+signRecover (Session sessHandle funcListPtr) signData outLen = do
+    with outLen $ \outLenPtr -> do
+        allocaBytes (fromIntegral outLen) $ \outPtr -> do
+            (rv, outResLen) <- signRecover' funcListPtr sessHandle signData (fromIntegral $ BS.length signData) outPtr outLen
+            if rv /= 0
+                then fail $ "failed to sign with recovery: " ++ (rvToStr rv)
                 else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
 
 
