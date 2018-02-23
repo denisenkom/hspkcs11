@@ -59,10 +59,11 @@ module System.Crypto.Pkcs11 (
 
     -- * Object attributes
     ObjectHandle,
-    Attribute(Class,Label,KeyType,Modulus,ModulusBits,PublicExponent,Token,Decrypt,ValueLen,Extractable),
+    Attribute(Class,Label,KeyType,Modulus,ModulusBits,PublicExponent,Token,Decrypt,ValueLen,Extractable,Value),
     ClassType(PrivateKey,SecretKey),
     KeyTypeValue(RSA,DSA,DH,ECDSA,EC,AES),
     destroyObject,
+    createObject,
     copyObject,
     getObjectSize,
     -- ** Searching objects
@@ -756,6 +757,7 @@ data Attribute = Class ClassType
     | Modulus Integer
     | PublicExponent Integer
     | ValueLen Integer
+    | Value BS.ByteString
     | Extractable Bool
     deriving (Show)
 
@@ -787,6 +789,7 @@ _attrType (ModulusBits _) = ModulusBitsType
 _attrType (Token _) = TokenType
 _attrType (ValueLen _) = ValueLenType
 _attrType (Extractable _) = ExtractableType
+_attrType (Value _) = ValueType
 
 
 _valueSize :: Attribute -> Int
@@ -797,6 +800,7 @@ _valueSize (ModulusBits _) = {#sizeof CK_ULONG#}
 _valueSize (Token _) = {#sizeof CK_BBOOL#}
 _valueSize (ValueLen _) = {#sizeof CK_ULONG#}
 _valueSize (Extractable _) = {#sizeof CK_BBOOL#}
+_valueSize (Value bs) = BS.length bs
 
 
 _pokeValue :: Attribute -> Ptr () -> IO ()
@@ -807,6 +811,7 @@ _pokeValue (ModulusBits l) ptr = poke (castPtr ptr :: Ptr {#type CK_ULONG#}) (fr
 _pokeValue (Token b) ptr = poke (castPtr ptr :: Ptr {#type CK_BBOOL#}) (fromBool b :: {#type CK_BBOOL#})
 _pokeValue (ValueLen l) ptr = poke (castPtr ptr :: Ptr {#type CK_ULONG#}) (fromIntegral l :: {#type CK_ULONG#})
 _pokeValue (Extractable b) ptr = poke (castPtr ptr :: Ptr {#type CK_BBOOL#}) (fromBool b :: {#type CK_BBOOL#})
+_pokeValue (Value bs) ptr = unsafeUseAsCStringLen bs $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
 
 
 _pokeValues :: [Attribute] -> Ptr () -> IO ()
@@ -1010,6 +1015,22 @@ generateKeyPair (Session sessionHandle functionListPtr) mechType pubKeyAttrs pri
     if rv /= 0
         then fail $ "failed to generate key pair: " ++ (rvToStr rv)
         else return (pubKeyHandle, privKeyHandle)
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_CreateObject as createObject'
+ {`FunctionListPtr',
+  `SessionHandle',
+  `LlAttributePtr',
+  `CULong',
+  alloca- `ObjectHandle' peek*} -> `Rv'
+#}
+
+createObject (Session sessHandle funcListPtr) attribs = do
+    _withAttribs attribs $ \attribsPtr -> do
+        (rv, createdHandle) <- createObject' funcListPtr sessHandle attribsPtr (fromIntegral $ length attribs)
+        if rv /= 0
+            then fail $ "failed to create object: " ++ (rvToStr rv)
+            else return createdHandle
 
 
 {#fun unsafe CK_FUNCTION_LIST.C_CopyObject as copyObject'

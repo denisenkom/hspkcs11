@@ -110,6 +110,11 @@ main = do
         putStrLn "digest"
         digestedData <- digest sess signedData 1000
         putStrLn $ show digestedData
+        putStrLn "create object"
+        createdAesKey <- createObject sess [Class SecretKey,
+                                            KeyType AES,
+                                            Value (BS.replicate 16 0)]
+        putStrLn $ show createdAesKey
 
     putStrLn "open read-only session"
     withSession lib slotId False $ \sess -> do
