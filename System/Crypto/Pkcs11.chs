@@ -53,7 +53,9 @@ module System.Crypto.Pkcs11 (
     Session,
     UserType(User,SecurityOfficer,ContextSpecific),
     withSession,
+    closeAllSessions,
     getSessionInfo,
+    getOperationState,
     login,
     logout,
 
@@ -142,7 +144,10 @@ type ObjectHandle = {#type CK_OBJECT_HANDLE#}
 {#typedef CK_OBJECT_HANDLE ObjectHandle#}
 {#default in `ObjectHandle' [CK_OBJECT_HANDLE] fromIntegral#}
 {#default out `ObjectHandle' [CK_OBJECT_HANDLE] fromIntegral#}
-type SlotId = Int
+type SlotId = {#type CK_SLOT_ID#}
+{#typedef CK_SLOT_ID SlotId#}
+{#default in `SlotId' [CK_SLOT_ID] fromIntegral#}
+{#default out `SlotId' [CK_SLOT_ID] fromIntegral#}
 type Rv = {#type CK_RV#}
 {#typedef CK_RV Rv#}
 {#default out `Rv' [CK_RV] fromIntegral#}
@@ -364,7 +369,7 @@ getSlotList' functionListPtr active num = do
       return (fromIntegral res, slots)
 
 
-initToken' :: FunctionListPtr -> Int -> BU8.ByteString -> String -> IO (Rv)
+initToken' :: FunctionListPtr -> SlotId -> BU8.ByteString -> String -> IO (Rv)
 initToken' funcListPtr slotId pin label = do
     unsafeUseAsCStringLen pin $ \(pinPtr, pinLen) -> do
         allocaArray 32 $ \labelArray -> do
@@ -405,14 +410,14 @@ getSessionInfo (Session sessHandle funListPtr) = do
 
 {#fun unsafe CK_FUNCTION_LIST.C_GetSlotInfo as getSlotInfo'
   {`FunctionListPtr',
-   `Int',
+   `SlotId',
    alloca- `SlotInfo' peek* } -> `Rv' fromIntegral
 #}
 
 
 {#fun unsafe CK_FUNCTION_LIST.C_GetTokenInfo as getTokenInfo'
   {`FunctionListPtr',
-   `Int',
+   `SlotId',
    alloca- `TokenInfo' peek* } -> `Rv' fromIntegral
 #}
 
@@ -426,7 +431,18 @@ openSession' functionListPtr slotId flags =
 
 {#fun unsafe CK_FUNCTION_LIST.C_CloseSession as closeSession'
  {`FunctionListPtr',
-  `CULong' } -> `Rv' fromIntegral#}
+  `SessionHandle' } -> `Rv' fromIntegral#}
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_CloseAllSessions as closeAllSessions'
+ {`FunctionListPtr',
+  `SlotId' } -> `Rv' fromIntegral#}
+
+closeAllSessions (Library _ funcListPtr) slotId = do
+    rv <- closeAllSessions' funcListPtr slotId
+    if rv /= 0
+        then fail $ "failed to close sessions: " ++ (rvToStr rv)
+        else return ()
 
 
 {#fun unsafe CK_FUNCTION_LIST.C_Finalize as finalize
@@ -464,6 +480,20 @@ findObjects' functionListPtr session maxObjects = do
 
 
 {#enum define UserType {CKU_USER as User, CKU_SO as SecurityOfficer, CKU_CONTEXT_SPECIFIC as ContextSpecific} deriving (Eq) #}
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_GetOperationState as getOperationState'
+ {`FunctionListPtr',
+  `SessionHandle',
+  castPtr `Ptr CUChar',
+  `CULong' peek*} ->  `Rv'#}
+
+getOperationState (Session sessHandle funcListPtr) maxSize = do
+    allocaBytes (fromIntegral maxSize) $ \bytesPtr -> do
+        (rv, resSize) <- getOperationState' funcListPtr sessHandle bytesPtr maxSize
+        if rv /= 0
+            then fail $ "failed to get operation state: " ++ (rvToStr rv)
+            else BS.packCStringLen (castPtr bytesPtr, fromIntegral resSize)
 
 
 _login :: FunctionListPtr -> SessionHandle -> UserType -> BU8.ByteString -> IO (Rv)
@@ -526,7 +556,7 @@ _generateKeyPair functionListPtr session mechType pubAttrs privAttrs = do
 
 
 
-_getMechanismList :: FunctionListPtr -> Int -> Int -> IO (Rv, [Int])
+_getMechanismList :: FunctionListPtr -> SlotId -> Int -> IO (Rv, [Int])
 _getMechanismList functionListPtr slotId maxMechanisms = do
     alloca $ \arrayLenPtr -> do
         poke arrayLenPtr (fromIntegral maxMechanisms)
@@ -539,7 +569,7 @@ _getMechanismList functionListPtr slotId maxMechanisms = do
 
 {#fun unsafe CK_FUNCTION_LIST.C_GetMechanismInfo as _getMechanismInfo
   {`FunctionListPtr',
-   `Int',
+   `SlotId',
    `Int',
    alloca- `MechInfo' peek* } -> `Rv' fromIntegral
 #}
@@ -562,6 +592,7 @@ rvToStr {#const CKR_ENCRYPTED_DATA_INVALID#} = "encrypted data is invalid"
 rvToStr {#const CKR_ENCRYPTED_DATA_LEN_RANGE#} = "encrypted data length not in range"
 rvToStr {#const CKR_FUNCTION_CANCELED#} = "function canceled"
 rvToStr {#const CKR_FUNCTION_FAILED#} = "function failed"
+rvToStr {#const CKR_FUNCTION_NOT_SUPPORTED#} = "function not supported"
 rvToStr {#const CKR_GENERAL_ERROR#} = "general error"
 rvToStr {#const CKR_HOST_MEMORY#} = "host memory"
 rvToStr {#const CKR_KEY_FUNCTION_NOT_PERMITTED#} = "key function not permitted"

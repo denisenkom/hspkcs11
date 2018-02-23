@@ -87,6 +87,9 @@ main = do
         putStrLn $ show signature
         putStrLn "verifyInit"
         verifyInit sess (simpleMech RsaPkcs) pubKeyHandle
+        --putStrLn "get operation state"
+        --operState <- getOperationState sess 1000
+        --putStrLn $ show operState
         putStrLn "verify"
         verRes <- verify sess signedData signature
         putStrLn $ "verify result " ++ (show verRes)
@@ -115,6 +118,9 @@ main = do
                                             KeyType AES,
                                             Value (BS.replicate 16 0)]
         putStrLn $ show createdAesKey
+
+    putStrLn "close all sessions"
+    closeAllSessions lib slotId
 
     putStrLn "open read-only session"
     withSession lib slotId False $ \sess -> do
