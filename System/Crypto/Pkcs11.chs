@@ -47,6 +47,7 @@ module System.Crypto.Pkcs11 (
     mechInfoMinKeySize,
     mechInfoMaxKeySize,
     mechInfoFlags,
+    simpleMech,
 
     -- * Session management
     Session,
@@ -86,6 +87,12 @@ module System.Crypto.Pkcs11 (
     -- * Encryption/decryption
     decrypt,
     encrypt,
+
+    -- * Signing
+    signInit,
+    sign,
+    verifyInit,
+    verify,
 
     -- * Misc
     Version,
@@ -290,6 +297,9 @@ data Mech = Mech {
     mechParamPtr :: Ptr (),
     mechParamSize :: Int
 }
+
+simpleMech :: MechType -> Mech
+simpleMech mechType = Mech mechType nullPtr 0
 
 instance Storable Mech where
     sizeOf _ = {#sizeof CK_MECHANISM_TYPE#} + {#sizeof CK_VOID_PTR#} + {#sizeof CK_ULONG#}
@@ -1478,6 +1488,78 @@ encrypt mechType (Session sessionHandle functionListPtr) obj encData = do
                         outDataLen <- peek outDataLenPtr
                         res <- BS.packCStringLen (castPtr outDataPtr, fromIntegral outDataLen)
                         return res
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_SignInit as signInit'
+ {`FunctionListPtr',
+  `SessionHandle',
+  with* `Mech',
+  `ObjectHandle'} -> `Rv'
+#}
+
+
+unsafeUseAsCUCharPtr :: BS.ByteString -> (Ptr CUChar -> IO b) -> IO b
+unsafeUseAsCUCharPtr bs fn =
+    unsafeUseAsCString bs $ \cstrptr -> do
+        fn (castPtr cstrptr)
+
+{#fun unsafe CK_FUNCTION_LIST.C_Sign as sign'
+ {`FunctionListPtr',
+  `SessionHandle',
+  unsafeUseAsCUCharPtr* `BS.ByteString',
+  `CULong',
+  castPtr `Ptr CUChar',
+  with* `CULong' peek*} -> `Rv'
+#}
+
+
+signInit :: Session -> Mech -> ObjectHandle -> IO ()
+signInit (Session sessHandle funcListPtr) mech objHandle = do
+    rv <- signInit' funcListPtr sessHandle mech objHandle
+    if rv /= 0
+        then fail $ "failed to initialize signing operation: " ++ (rvToStr rv)
+        else return ()
+
+
+sign :: Session -> BS.ByteString -> CULong -> IO (BS.ByteString)
+sign (Session sessHandle funcListPtr) signData outLen = do
+    with outLen $ \outLenPtr -> do
+        allocaBytes (fromIntegral outLen) $ \outPtr -> do
+            (rv, outResLen) <- sign' funcListPtr sessHandle signData (fromIntegral $ BS.length signData) outPtr outLen
+            if rv /= 0
+                then fail $ "failed to sign: " ++ (rvToStr rv)
+                else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_VerifyInit as verifyInit'
+ {`FunctionListPtr',
+  `SessionHandle',
+  with* `Mech',
+  `ObjectHandle'} -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_Verify as verify'
+ {`FunctionListPtr',
+  `SessionHandle',
+  unsafeUseAsCUCharPtr* `BS.ByteString',
+  `CULong',
+  unsafeUseAsCUCharPtr* `BS.ByteString',
+  `CULong'} -> `Rv'
+#}
+
+verifyInit :: Session -> Mech -> ObjectHandle -> IO ()
+verifyInit (Session sessHandle funcListPtr) mech objHandle = do
+    rv <- verifyInit' funcListPtr sessHandle mech objHandle
+    if rv /= 0
+        then fail $ "failed to initialize verify operation: " ++ (rvToStr rv)
+        else return ()
+
+verify :: Session -> BS.ByteString -> BS.ByteString -> IO (Bool)
+verify (Session sessHandle funcListPtr) signData signatureData = do
+    rv <- verify' funcListPtr sessHandle signData (fromIntegral $ BS.length signData) signatureData (fromIntegral $ BS.length signatureData)
+    case rv of 0 -> return True
+               {#const CKR_SIGNATURE_INVALID#} -> return False
+               _ -> fail $ "failed to verify: " ++ (rvToStr rv)
 
 
 unwrapKey :: MechType -> Session -> ObjectHandle -> BS.ByteString -> [Attribute] -> IO ObjectHandle

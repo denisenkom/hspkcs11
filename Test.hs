@@ -65,8 +65,28 @@ main = do
         putStrLn "generate key"
         keyHandle <- generateKey sess AesKeyGen [ValueLen 16, Token True, Label "testaeskey"]
         putStrLn $ "generated key " ++ (show keyHandle)
+        putStrLn "encryption"
+        encData <- encrypt AesEcb sess keyHandle (BS.pack [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
+        putStrLn $ show encData
+        putStrLn "decryption"
+        decData <- decrypt AesEcb sess keyHandle encData
+        putStrLn $ show decData
         putStrLn "deleting object"
         destroyObject sess keyHandle
+        putStrLn "generating key pair"
+        (pubKeyHandle, privKeyHandle) <- generateKeyPair sess RsaPkcsKeyPairGen [ModulusBits 2048, Token True, Label "key"] [Token True, Label "key"]
+        putStrLn $ "generated " ++ (show pubKeyHandle) ++ " and " ++ (show privKeyHandle)
+        putStrLn "signInit"
+        signInit sess (simpleMech RsaPkcs) privKeyHandle
+        putStrLn "sign"
+        let signedData = BS.pack [0,0,0,0]
+        signature <- sign sess signedData 1000
+        putStrLn $ show signature
+        putStrLn "verifyInit"
+        verifyInit sess (simpleMech RsaPkcs) pubKeyHandle
+        putStrLn "verify"
+        verRes <- verify sess signedData signature
+        putStrLn $ "verify result " ++ (show verRes)
 
     putStrLn "open read-only session"
     withSession lib slotId False $ \sess -> do
