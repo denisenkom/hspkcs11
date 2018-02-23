@@ -76,6 +76,8 @@ module System.Crypto.Pkcs11 (
     getSignFlag,
     getModulus,
     getPublicExponent,
+    -- ** Writing attributes
+    setAttributes,
 
     -- * Key generation
     generateKey,
@@ -1060,6 +1062,22 @@ getPublicExponent :: Session -> ObjectHandle -> IO Integer
 getPublicExponent sess objHandle = do
     (PublicExponent v) <- getObjectAttr sess objHandle PublicExponentType
     return v
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_SetAttributeValue as setAttributeValue'
+ {`FunctionListPtr',
+  `SessionHandle',
+  `ObjectHandle',
+  `LlAttributePtr',
+  `CULong'} -> `Rv'
+#}
+
+setAttributes (Session sessHandle funcListPtr) objHandle attribs = do
+    _withAttribs attribs $ \attribsPtr -> do
+        rv <- setAttributeValue' funcListPtr sessHandle objHandle attribsPtr (fromIntegral $ length attribs)
+        if rv /= 0
+            then fail $ "failed to set attributes: " ++ (rvToStr rv)
+            else return ()
 
 
 initPin :: Session -> BU8.ByteString -> IO ()

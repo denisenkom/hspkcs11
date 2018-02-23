@@ -95,6 +95,8 @@ main = do
         putStrLn "generateRandom"
         randData <- generateRandom sess 10
         putStrLn $ show randData
+        putStrLn "set attributes"
+        setAttributes sess aesKeyHandle [Extractable False]
         putStrLn "deleting object"
         destroyObject sess aesKeyHandle
         putStrLn "digestInit"
