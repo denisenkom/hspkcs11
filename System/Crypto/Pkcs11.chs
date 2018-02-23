@@ -94,6 +94,10 @@ module System.Crypto.Pkcs11 (
     verifyInit,
     verify,
 
+    -- * Random
+    seedRandom,
+    generateRandom,
+
     -- * Misc
     Version,
     versionMajor,
@@ -1575,6 +1579,35 @@ unwrapKey mechType (Session sessionHandle functionListPtr) key wrappedKey templa
                         else do
                             unwrappedKey <- peek unwrappedKeyPtr
                             return unwrappedKey
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_SeedRandom as seedRandom'
+ {`FunctionListPtr',
+  `SessionHandle',
+  unsafeUseAsCUCharPtr* `BS.ByteString',
+  `CULong'} -> `Rv'
+#}
+
+seedRandom (Session sessHandle funcListPtr) seedData = do
+    rv <- seedRandom' funcListPtr sessHandle seedData (fromIntegral $ BS.length seedData)
+    if rv /= 0
+        then fail $ "failed to seed random: " ++ (rvToStr rv)
+        else return ()
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_GenerateRandom as generateRandom'
+ {`FunctionListPtr',
+  `SessionHandle',
+  castPtr `Ptr CUChar',
+  `CULong'} -> `Rv'
+#}
+
+generateRandom (Session sessHandle funcListPtr) randLen = do
+    allocaBytes (fromIntegral randLen) $ \randPtr -> do
+        rv <- generateRandom' funcListPtr sessHandle randPtr randLen
+        if rv /= 0
+            then fail $ "failed to generate random data: " ++ (rvToStr rv)
+            else BS.packCStringLen (castPtr randPtr, fromIntegral randLen)
 
 
 -- | Obtains a list of mechanism types supported by a token

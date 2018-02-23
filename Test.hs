@@ -87,6 +87,11 @@ main = do
         putStrLn "verify"
         verRes <- verify sess signedData signature
         putStrLn $ "verify result " ++ (show verRes)
+        putStrLn "seedRandom"
+        seedRandom sess signedData
+        putStrLn "generateRandom"
+        randData <- generateRandom sess 10
+        putStrLn $ show randData
 
     putStrLn "open read-only session"
     withSession lib slotId False $ \sess -> do
