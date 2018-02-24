@@ -66,10 +66,12 @@ main = do
         aesKeyHandle <- generateKey sess (simpleMech AesKeyGen) [ValueLen 16, Token True, Label "testaeskey", Extractable True]
         putStrLn $ "generated key " ++ (show aesKeyHandle)
         putStrLn "encryption"
-        encData <- encrypt AesEcb sess aesKeyHandle (BS.pack [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
+        encryptInit (simpleMech AesEcb) sess aesKeyHandle
+        encData <- encrypt sess (BS.pack [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]) 1000
         putStrLn $ show encData
         putStrLn "decryption"
-        decData <- decrypt AesEcb sess aesKeyHandle encData
+        decryptInit (simpleMech AesEcb) sess aesKeyHandle
+        decData <- decrypt sess encData 1000
         putStrLn $ show decData
         putStrLn "generating key pair"
         (pubKeyHandle, privKeyHandle) <- generateKeyPair sess (simpleMech RsaPkcsKeyPairGen) [ModulusBits 2048, Token True, Label "key"] [Token True, Label "key"]
@@ -172,11 +174,13 @@ main = do
             encryptedMessage = AESmod.encryptECB aesKey "hello00000000000"
 
         -- test decryption using RSA key
-        dec <- decrypt RsaPkcs sess objId (BSL.toStrict encKey)
+        decryptInit (simpleMech RsaPkcs) sess objId
+        dec <- decrypt sess (BSL.toStrict encKey) 1000
         putStrLn $ show dec
 
         -- test decryption using AES key
-        decAes <- decrypt AesEcb sess unwrappedKeyHandle encryptedMessage
+        decryptInit (simpleMech AesEcb) sess unwrappedKeyHandle
+        decAes <- decrypt sess encryptedMessage 1000
         putStrLn $ show decAes
         logout sess
 

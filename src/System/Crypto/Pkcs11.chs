@@ -98,7 +98,9 @@ module System.Crypto.Pkcs11 (
     unwrapKey,
 
     -- * Encryption/decryption
+    decryptInit,
     decrypt,
+    encryptInit,
     encrypt,
 
     -- * Digest
@@ -1621,50 +1623,42 @@ logout (Session sessionHandle functionListPtr) = do
     } deriving (Eq,Show) #}
 
 
-_decryptInit :: MechType -> Session -> ObjectHandle -> IO ()
-_decryptInit mechType (Session sessionHandle functionListPtr) obj = do
-    alloca $ \mechPtr -> do
-        poke mechPtr (Mech {mechType = mechType, mechParamPtr = nullPtr, mechParamSize = 0})
+decryptInit :: Mech -> Session -> ObjectHandle -> IO ()
+decryptInit mech (Session sessionHandle functionListPtr) obj = do
+    with mech $ \mechPtr -> do
         rv <- {#call unsafe CK_FUNCTION_LIST.C_DecryptInit#} functionListPtr sessionHandle mechPtr obj
         if rv /= 0
             then fail $ "failed to initiate decryption: " ++ (rvToStr rv)
             else return ()
 
 
-decrypt :: MechType -> Session -> ObjectHandle -> BS.ByteString -> IO BS.ByteString
-decrypt mechType (Session sessionHandle functionListPtr) obj encData = do
-    _decryptInit mechType (Session sessionHandle functionListPtr) obj
+decrypt :: Session -> BS.ByteString -> CULong -> IO BS.ByteString
+decrypt (Session sessionHandle functionListPtr) encData outLen = do
     unsafeUseAsCStringLen encData $ \(encDataPtr, encDataLen) -> do
-        allocaBytes encDataLen $ \outDataPtr -> do
-            alloca $ \outDataLenPtr -> do
-                poke outDataLenPtr (fromIntegral encDataLen)
+        allocaBytes (fromIntegral outLen) $ \outDataPtr -> do
+            with outLen $ \outDataLenPtr -> do
                 rv <- {#call unsafe CK_FUNCTION_LIST.C_Decrypt#} functionListPtr sessionHandle (castPtr encDataPtr) (fromIntegral encDataLen) outDataPtr outDataLenPtr
                 if rv /= 0
                     then fail $ "failed to decrypt: " ++ (rvToStr rv)
                     else do
                         outDataLen <- peek outDataLenPtr
-                        res <- BS.packCStringLen (castPtr outDataPtr, fromIntegral outDataLen)
-                        return res
+                        BS.packCStringLen (castPtr outDataPtr, fromIntegral outDataLen)
 
 
-_encryptInit :: MechType -> Session -> ObjectHandle -> IO ()
-_encryptInit mechType (Session sessionHandle functionListPtr) obj = do
-    alloca $ \mechPtr -> do
-        poke mechPtr (Mech {mechType = mechType, mechParamPtr = nullPtr, mechParamSize = 0})
+encryptInit :: Mech -> Session -> ObjectHandle -> IO ()
+encryptInit mech (Session sessionHandle functionListPtr) obj = do
+    with mech $ \mechPtr -> do
         rv <- {#call unsafe CK_FUNCTION_LIST.C_EncryptInit#} functionListPtr sessionHandle mechPtr obj
         if rv /= 0
             then fail $ "failed to initiate decryption: " ++ (rvToStr rv)
             else return ()
 
 
-encrypt :: MechType -> Session -> ObjectHandle -> BS.ByteString -> IO BS.ByteString
-encrypt mechType (Session sessionHandle functionListPtr) obj encData = do
-    _encryptInit mechType (Session sessionHandle functionListPtr) obj
-    let outLen = 1000
+encrypt :: Session -> BS.ByteString -> CULong -> IO BS.ByteString
+encrypt (Session sessionHandle functionListPtr) encData outLen = do
     unsafeUseAsCStringLen encData $ \(encDataPtr, encDataLen) -> do
-        allocaBytes outLen $ \outDataPtr -> do
-            alloca $ \outDataLenPtr -> do
-                poke outDataLenPtr (fromIntegral outLen)
+        allocaBytes (fromIntegral outLen) $ \outDataPtr -> do
+            with outLen $ \outDataLenPtr -> do
                 rv <- {#call unsafe CK_FUNCTION_LIST.C_Encrypt#} functionListPtr sessionHandle (castPtr encDataPtr) (fromIntegral encDataLen) outDataPtr outDataLenPtr
                 if rv /= 0
                     then fail $ "failed to decrypt: " ++ (rvToStr rv)
