@@ -16,7 +16,7 @@ library
     hs-source-dirs: src
     build-tools:    c2hs
     build-depends:
-        base,
+        base >= 4.9 && < 4.11,
         unix,
         utf8-string,
         bytestring
