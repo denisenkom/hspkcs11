@@ -16,6 +16,7 @@ module System.Crypto.Pkcs11 (
 
     -- * Slots
     SlotId,
+    getSlotNum,
     getSlotList,
 
     -- ** Reading slot information
@@ -40,6 +41,7 @@ module System.Crypto.Pkcs11 (
     setPin,
 
     -- * Mechanisms
+    Mech,
     MechType(RsaPkcsKeyPairGen,RsaPkcs,Rsa9796,AesEcb,AesCbc,AesMac,AesMacGeneral,AesCbcPad,AesCtr,AesKeyGen,Sha256,
         DhPkcsKeyPairGen,DhPkcsParameterGen,DhPkcsDerive),
     MechInfo,
@@ -64,7 +66,7 @@ module System.Crypto.Pkcs11 (
     ObjectHandle,
     Attribute(Class,Label,KeyType,Modulus,ModulusBits,PrimeBits,PublicExponent,Prime,Base,Token,Decrypt,ValueLen,
               Extractable,Value),
-    ClassType(PrivateKey,SecretKey),
+    ClassType(Data,Certificate,PublicKey,PrivateKey,SecretKey,HWFeature,DomainParameters,Mechanism),
     KeyTypeValue(RSA,DSA,DH,ECDSA,EC,AES),
     destroyObject,
     createObject,
@@ -98,10 +100,11 @@ module System.Crypto.Pkcs11 (
     unwrapKey,
 
     -- * Encryption/decryption
-    decryptInit,
     decrypt,
-    encryptInit,
     encrypt,
+    -- ** Multipart operations
+    decryptInit,
+    encryptInit,
     encryptUpdate,
     encryptFinal,
 
@@ -152,10 +155,12 @@ _rwSession = {#const CKF_RW_SESSION#} :: Int
 
 rsaPkcsKeyPairGen = {#const CKM_RSA_PKCS_KEY_PAIR_GEN#} :: Int
 
+-- | Used to reference an object
 type ObjectHandle = {#type CK_OBJECT_HANDLE#}
 {#typedef CK_OBJECT_HANDLE ObjectHandle#}
 {#default in `ObjectHandle' [CK_OBJECT_HANDLE] fromIntegral#}
 {#default out `ObjectHandle' [CK_OBJECT_HANDLE] fromIntegral#}
+
 type SlotId = {#type CK_SLOT_ID#}
 {#typedef CK_SLOT_ID SlotId#}
 {#default in `SlotId' [CK_SLOT_ID] fromIntegral#}
@@ -167,7 +172,6 @@ type CK_BBOOL = {#type CK_BBOOL#}
 type CK_BYTE = {#type CK_BYTE#}
 type CK_FLAGS = {#type CK_FLAGS#}
 type GetFunctionListFunPtr = {#type CK_C_GetFunctionList#}
-type GetSlotListFunPtr = {#type CK_C_GetSlotList#}
 type NotifyFunPtr = {#type CK_NOTIFY#}
 type SessionHandle = {#type CK_SESSION_HANDLE#}
 {#typedef CK_SESSION_HANDLE SessionHandle#}
@@ -370,15 +374,31 @@ instance Storable SessionInfo where
  {`FunctionListPtr',
   alloca- `Info' peekInfo* } -> `Rv' fromIntegral#}
 
+{#fun unsafe CK_FUNCTION_LIST.C_GetSlotList as getSlotList'
+ {`FunctionListPtr',
+  `Bool',
+  castPtr `Ptr SlotId',
+  `CULong' peek*} -> `Rv'
+#}
 
-getSlotList' functionListPtr active num = do
-  alloca $ \arrayLenPtr -> do
-    poke arrayLenPtr (fromIntegral num)
+getSlotNum (Library _ functionListPtr) active = do
+    (rv, outNum) <- getSlotList' functionListPtr active nullPtr 0
+    if rv /= 0
+        then fail $ "failed to get number of slots " ++ (rvToStr rv)
+        else return outNum
+
+-- | Allows to obtain a list of slots in the system
+--
+-- > slotsIds <- getSlotList lib True 10
+--
+-- In this example retrieves list of, at most 10 (third parameter) slot identifiers with tokens present (second parameter is set to True)
+getSlotList :: Library -> Bool -> Int -> IO [SlotId]
+getSlotList (Library _ functionListPtr) active num = do
     allocaArray num $ \array -> do
-      res <- {#call unsafe CK_FUNCTION_LIST.C_GetSlotList#} functionListPtr (fromBool active) array arrayLenPtr
-      arrayLen <- peek arrayLenPtr
-      slots <- peekArray (fromIntegral arrayLen) array
-      return (fromIntegral res, slots)
+        (rv, outNum) <- getSlotList' functionListPtr active array (fromIntegral num)
+        if rv /= 0
+            then fail $ "failed to get list of slots " ++ (rvToStr rv)
+            else peekArray (fromIntegral outNum) array
 
 
 initToken' :: FunctionListPtr -> SlotId -> BU8.ByteString -> String -> IO (Rv)
@@ -520,6 +540,7 @@ _login functionListPtr session userType pin = do
   `SessionHandle',
   `ObjectHandle'} ->  `Rv'#}
 
+-- | Deletes an object from token or session.
 destroyObject (Session sessHandle funcListPtr) objectHandle = do
     rv <- destroyObject' funcListPtr sessHandle objectHandle
     if rv /= 0
@@ -544,6 +565,17 @@ generateKey' funcListPtr sessHandle mech attribs = do
 --   alloca- `ObjectHandle'} -> `Rv' fromIntegral#}
 
 
+-- | Generates a symmetric key using provided mechanism and applies provided attributes to resulting key object.
+--
+-- Examples:
+--
+-- Generate 128-bit AES key:
+--
+-- > keyHandle <- generateKey sess (simpleMech AesKeyGen) [ValueLen 16]
+--
+-- Generate 1024-bit Diffie-Hellman domain parameters using PKCS#3 mechanism:
+--
+-- > dhParamsHandle <- generateKey sess (simpleMech DhPkcsParameterGen) [PrimeBits 1028]
 generateKey :: Session -> Mech -> [Attribute] -> IO ObjectHandle
 generateKey (Session sessHandle funcListPtr) mech attribs = do
     (rv, keyHandle) <- generateKey' funcListPtr sessHandle mech attribs
@@ -552,7 +584,12 @@ generateKey (Session sessHandle funcListPtr) mech attribs = do
         else return keyHandle
 
 
-_generateKeyPair :: FunctionListPtr -> SessionHandle -> Mech -> [Attribute] -> [Attribute] -> IO (Rv, ObjectHandle, ObjectHandle)
+_generateKeyPair :: FunctionListPtr
+                 -> SessionHandle
+                 -> Mech
+                 -> [Attribute]
+                 -> [Attribute]
+                 -> IO (Rv, ObjectHandle, ObjectHandle)
 _generateKeyPair functionListPtr session mech pubAttrs privAttrs = do
     alloca $ \pubKeyHandlePtr -> do
         alloca $ \privKeyHandlePtr -> do
@@ -649,11 +686,11 @@ rvToStr rv = "unknown value for error " ++ (show rv)
 {#enum define ClassType {
     CKO_DATA as Data,
     CKO_CERTIFICATE as Certificate,
-    CKO_PUBLIC_KEY as PublicKey,
-    CKO_PRIVATE_KEY as PrivateKey,
-    CKO_SECRET_KEY as SecretKey,
+    CKO_PUBLIC_KEY as PublicKey,  -- ^ asymmetric public key, e.g. RSA public key
+    CKO_PRIVATE_KEY as PrivateKey,  -- ^ asymmetric private key, e.g. RSA private key
+    CKO_SECRET_KEY as SecretKey,  -- ^ symmetric key, e.g. AES key
     CKO_HW_FEATURE as HWFeature,
-    CKO_DOMAIN_PARAMETERS as DomainParameters,
+    CKO_DOMAIN_PARAMETERS as DomainParameters,  -- ^ e.g. parameters for Diffie-Hellman
     CKO_MECHANISM as Mechanism
 } deriving (Show, Eq)
 #}
@@ -791,21 +828,22 @@ rvToStr rv = "unknown value for error " ++ (show rv)
     CKA_VENDOR_DEFINED     as VendorDefinedType
     } deriving (Show, Eq) #}
 
-data Attribute = Class ClassType
-    | KeyType KeyTypeValue
-    | Label String
-    | ModulusBits Int
-    | PrimeBits Int
-    | Token Bool
-    | Decrypt Bool
-    | Sign Bool
-    | Modulus Integer
-    | PublicExponent Integer
-    | Prime Integer
-    | Base Integer
-    | ValueLen Integer
-    | Value BS.ByteString
-    | Extractable Bool
+-- | Represents an attribute of an object
+data Attribute = Class ClassType -- ^ class of an object, e.g. 'PrivateKey', 'SecretKey'
+    | KeyType KeyTypeValue -- ^ e.g. 'RSA' or 'AES'
+    | Label String -- ^ object's label
+    | Token Bool -- ^ whether object is stored on the token or is a temporary session object
+    | Decrypt Bool -- ^ allow/deny encryption function for an object
+    | Sign Bool -- ^ allow/deny signing function for an object
+    | ModulusBits Int -- ^ number of bits used by modulus, for example in RSA public key
+    | Modulus Integer -- ^ modulus value, used by RSA keys
+    | PublicExponent Integer -- ^ value of public exponent, used by RSA public keys
+    | PrimeBits Int -- ^ number of bits used by prime in classic Diffie-Hellman
+    | Prime Integer -- ^ value of prime modulus, used in classic Diffie-Hellman
+    | Base Integer -- ^ value of generator, used in classic Diffie-Hellman
+    | ValueLen Int -- ^ length in bytes of the corresponding 'Value' attribute
+    | Value BS.ByteString -- ^ object's value attribute, for example it is a DER encoded certificate for certificate objects
+    | Extractable Bool -- ^ allows or denys extraction of certain attributes of private keys
     deriving (Show)
 
 data LlAttribute = LlAttribute {
@@ -945,7 +983,7 @@ _llAttrToAttr (LlAttribute SignType ptr len) = do
 
 -- High level API starts here
 
-
+-- | Represents a PKCS#11 library.
 data Library = Library {
     libraryHandle :: DL,
     functionListPtr :: FunctionListPtr
@@ -955,7 +993,7 @@ data Library = Library {
 data Session = Session SessionHandle FunctionListPtr
 
 
--- | Load PKCS#11 dynamically linked library
+-- | Load PKCS#11 dynamically linked library from given path
 --
 -- > lib <- loadLibrary "/path/to/dll.so"
 loadLibrary :: String -> IO Library
@@ -972,6 +1010,7 @@ loadLibrary libraryPath = do
                 else return Library { libraryHandle = lib, functionListPtr = functionListPtr }
 
 
+-- | Releases resources used by loaded library
 releaseLibrary lib = do
     rv <- finalize $ functionListPtr lib
     dlclose $ libraryHandle lib
@@ -986,20 +1025,12 @@ getInfo (Library _ functionListPtr) = do
         else return info
 
 
--- | Allows to obtain a list of slots in the system
---
--- > slotsIds <- getSlotList lib True 10
---
--- In this example retrieves list of, at most 10 (third parameter) slot identifiers with tokens present (second parameter is set to True)
-getSlotList :: Library -> Bool -> Int -> IO [SlotId]
-getSlotList (Library _ functionListPtr) active num = do
-    (rv, slots) <- getSlotList' functionListPtr active num
-    if rv /= 0
-        then fail $ "failed to get list of slots " ++ (rvToStr rv)
-        else return $ map (fromIntegral) slots
-
-
-initToken :: Library -> SlotId -> BU8.ByteString -> String -> IO ()
+-- | Initializes a token.  All objects created by user on the token are destroyed.
+initToken :: Library -- ^ PKCS#11 library
+          -> SlotId  -- ^ slot id in which to initialize token
+          -> BU8.ByteString -- ^ token's security officer password
+          -> String  -- ^ new label for the token
+          -> IO ()
 initToken (Library _ funcListPtr) slotId pin label = do
     rv <- initToken' funcListPtr slotId pin label
     if rv /= 0
@@ -1079,13 +1110,25 @@ _findObjectsFinalEx (Session sessionHandle functionListPtr) = do
         else return ()
 
 
+-- | Searches current session for objects matching provided attributes list, returns a list of matching object handles
 findObjects :: Session -> [Attribute] -> IO [ObjectHandle]
 findObjects session attribs = do
     _findObjectsInitEx session attribs
     finally (_findObjectsEx session) (_findObjectsFinalEx session)
 
 
-generateKeyPair :: Session -> Mech -> [Attribute] -> [Attribute] -> IO (ObjectHandle, ObjectHandle)
+-- | Generates an asymmetric key pair using provided mechanism.
+--
+-- Examples:
+--
+-- Generate an 2048-bit RSA key:
+--
+-- > (pubKey, privKey) <- generateKeyPair sess (simpleMech RsaPkcsKeyPairGen) [ModulusBits 2048] []
+generateKeyPair :: Session -- ^ session in which to generate key
+                -> Mech -- ^ a mechanism to use for key generation, for example 'simpleMech RsaPkcs'
+                -> [Attribute] -- ^ attributes applied to generated public key object
+                -> [Attribute] -- ^ attributes applied to generated private key object
+                -> IO (ObjectHandle, ObjectHandle) -- ^ created objects references, first is public key, second is private key
 generateKeyPair (Session sessionHandle functionListPtr) mech pubKeyAttrs privKeyAttrs = do
     (rv, pubKeyHandle, privKeyHandle) <- _generateKeyPair functionListPtr sessionHandle mech pubKeyAttrs privKeyAttrs
     if rv /= 0
@@ -1103,6 +1146,8 @@ generateKeyPair (Session sessionHandle functionListPtr) mech pubKeyAttrs privKey
   alloca- `ObjectHandle' peek*} -> `Rv'
 #}
 
+-- | Derives a key from a base key using provided mechanism and applies provided attributes to a resulting key.
+-- Can be used to derive symmetric key using Diffie-Hellman key exchange.
 deriveKey (Session sessHandle funcListPtr) mech baseKeyHandle attribs = do
     _withAttribs attribs $ \attribsPtr -> do
         (rv, createdHandle) <- deriveKey' funcListPtr sessHandle mech baseKeyHandle attribsPtr (fromIntegral $ length attribs)
@@ -1119,6 +1164,7 @@ deriveKey (Session sessHandle funcListPtr) mech baseKeyHandle attribs = do
   alloca- `ObjectHandle' peek*} -> `Rv'
 #}
 
+-- | Creates an object from given list of attributes and returns a reference to created object.
 createObject (Session sessHandle funcListPtr) attribs = do
     _withAttribs attribs $ \attribsPtr -> do
         (rv, createdHandle) <- createObject' funcListPtr sessHandle attribsPtr (fromIntegral $ length attribs)
@@ -1136,6 +1182,7 @@ createObject (Session sessHandle funcListPtr) attribs = do
   alloca- `ObjectHandle' peek*} -> `Rv'
 #}
 
+-- | Makes a copy of an object and changes attributes of copied object, returns a reference to new object.
 copyObject (Session sessHandle funcListPtr) objHandle attribs = do
     _withAttribs attribs $ \attribsPtr -> do
         (rv, createdHandle) <- copyObject' funcListPtr sessHandle objHandle attribsPtr (fromIntegral $ length attribs)
@@ -1151,6 +1198,7 @@ copyObject (Session sessHandle funcListPtr) objHandle attribs = do
   alloca- `CULong' peek*} -> `Rv'
 #}
 
+-- | Returns an approximate amount of space occupied by an object in bytes.
 getObjectSize (Session sessHandle funcListPtr) objHandle = do
     (rv, objSize) <- getObjectSize' funcListPtr sessHandle objHandle
     if rv /= 0
@@ -1228,6 +1276,7 @@ getBase sess objHandle = do
   `CULong'} -> `Rv'
 #}
 
+-- | Modifies attributes of an object.
 setAttributes (Session sessHandle funcListPtr) objHandle attribs = do
     _withAttribs attribs $ \attribsPtr -> do
         rv <- setAttributeValue' funcListPtr sessHandle objHandle attribsPtr (fromIntegral $ length attribs)
@@ -1236,6 +1285,7 @@ setAttributes (Session sessHandle funcListPtr) objHandle attribs = do
             else return ()
 
 
+-- | Initializes normal user's PIN.  Session should be logged in by SO user.
 initPin :: Session -> BU8.ByteString -> IO ()
 initPin (Session sessHandle funcListPtr) pin = do
     rv <- initPin' funcListPtr sessHandle pin
@@ -1244,7 +1294,11 @@ initPin (Session sessHandle funcListPtr) pin = do
         else return ()
 
 
-setPin :: Session -> BU8.ByteString -> BU8.ByteString -> IO ()
+-- | Changes PIN of a currently logged in user.
+setPin :: Session  -- ^ session to act on
+       -> BU8.ByteString -- ^ old PIN
+       -> BU8.ByteString -- ^ new PIN
+       -> IO ()
 setPin (Session sessHandle funcListPtr) oldPin newPin = do
     rv <- setPin' funcListPtr sessHandle oldPin newPin
     if rv /= 0
@@ -1252,7 +1306,11 @@ setPin (Session sessHandle funcListPtr) oldPin newPin = do
         else return ()
 
 
-login :: Session -> UserType -> BU8.ByteString -> IO ()
+-- | Logs a user into a token.
+login :: Session -- ^ session to act on
+      -> UserType -- ^ type of user to login
+      -> BU8.ByteString -- ^ user's PIN
+      -> IO ()
 login (Session sessionHandle functionListPtr) userType pin = do
     rv <- _login functionListPtr sessionHandle userType pin
     if rv /= 0
@@ -1260,6 +1318,7 @@ login (Session sessionHandle functionListPtr) userType pin = do
         else return ()
 
 
+-- | Logs a user out from a token.
 logout :: Session -> IO ()
 logout (Session sessionHandle functionListPtr) = do
     rv <- {#call unsafe CK_FUNCTION_LIST.C_Logout#} functionListPtr sessionHandle
@@ -1625,6 +1684,7 @@ logout (Session sessionHandle functionListPtr) = do
     } deriving (Eq,Show) #}
 
 
+-- | Initialize a multi-part decryption operation using provided mechanism and key.
 decryptInit :: Mech -> Session -> ObjectHandle -> IO ()
 decryptInit mech (Session sessionHandle functionListPtr) obj = do
     with mech $ \mechPtr -> do
@@ -1634,8 +1694,19 @@ decryptInit mech (Session sessionHandle functionListPtr) obj = do
             else return ()
 
 
-decrypt :: Session -> BS.ByteString -> CULong -> IO BS.ByteString
-decrypt (Session sessionHandle functionListPtr) encData outLen = do
+-- | Decrypt data using provided mechanism and key handle.
+--
+-- Example AES ECB decryption.
+--
+-- > decData <- decrypt (simpleMech AesEcb) sess aesKeyHandle encData 1000
+decrypt :: Mech -- ^ Mechanism used for decryption.
+        -> Session -- ^ Session on which key resides.
+        -> ObjectHandle -- ^ Key handle used for decryption.
+        -> BS.ByteString -- ^ Encrypted data to be decrypted.
+        -> CULong -- ^ Maximum number of bytes to be returned.
+        -> IO BS.ByteString -- ^ Decrypted data
+decrypt mech (Session sessionHandle functionListPtr) keyHandle encData outLen = do
+    decryptInit mech (Session sessionHandle functionListPtr) keyHandle
     unsafeUseAsCStringLen encData $ \(encDataPtr, encDataLen) -> do
         allocaBytes (fromIntegral outLen) $ \outDataPtr -> do
             with outLen $ \outDataLenPtr -> do
@@ -1647,7 +1718,11 @@ decrypt (Session sessionHandle functionListPtr) encData outLen = do
                         BS.packCStringLen (castPtr outDataPtr, fromIntegral outDataLen)
 
 
-encryptInit :: Mech -> Session -> ObjectHandle -> IO ()
+-- | Initialize multi-part encryption operation.
+encryptInit :: Mech -- ^ Mechanism to use for encryption.
+               -> Session -- ^ Session in which to perform operation.
+               -> ObjectHandle -- ^ Key handle.
+               -> IO ()
 encryptInit mech (Session sessionHandle functionListPtr) obj = do
     with mech $ \mechPtr -> do
         rv <- {#call unsafe CK_FUNCTION_LIST.C_EncryptInit#} functionListPtr sessionHandle mechPtr obj
@@ -1656,8 +1731,15 @@ encryptInit mech (Session sessionHandle functionListPtr) obj = do
             else return ()
 
 
-encrypt :: Session -> BS.ByteString -> CULong -> IO BS.ByteString
-encrypt (Session sessionHandle functionListPtr) encData outLen = do
+-- | Encrypt data using provided mechanism and key handle.
+encrypt :: Mech -- ^ Mechanism to use for encryption.
+        -> Session -- ^ Session in which to perform operation.
+        -> ObjectHandle -- ^ Key handle.
+        -> BS.ByteString -- ^ Data to be encrypted.
+        -> CULong -- ^ Maximum number of bytes to be returned.
+        -> IO BS.ByteString -- ^ Encrypted data.
+encrypt mech (Session sessionHandle functionListPtr) keyHandle encData outLen = do
+    encryptInit mech (Session sessionHandle functionListPtr) keyHandle
     unsafeUseAsCStringLen encData $ \(encDataPtr, encDataLen) -> do
         allocaBytes (fromIntegral outLen) $ \outDataPtr -> do
             with outLen $ \outDataLenPtr -> do
@@ -1848,6 +1930,18 @@ verify (Session sessHandle funcListPtr) signData signatureData = do
   with* `CULong' peek*} -> `Rv'
 #}
 
+-- | Wrap a key using provided wrapping key and return opaque byte array representing wrapped key.  This byte array
+-- can be stored in user application and can be used later to recreate wrapped key using 'unwrapKey' function.
+--
+-- Example wrapping AES key using RSA public key:
+--
+-- > wrappedAesKey <- wrapKey (simpleMech RsaPkcs) sess pubRsaKeyHandle aesKeyHandle 300
+wrapKey :: Mech -- ^ Mechanism used to wrap key (to encrypt)
+        -> Session -- ^ Session in which both keys reside.
+        -> ObjectHandle -- ^ Key which will be used to wrap (encrypt) another key
+        -> ObjectHandle -- ^ Key to be wrapped
+        -> CULong -- ^ Maximum size in bytes of a resulting byte array
+        -> IO BS.ByteString -- ^ Resulting opaque wrapped key
 wrapKey mech (Session sessHandle funcListPtr) wrappingKey key dataLen = do
     allocaBytes (fromIntegral dataLen) $ \dataPtr -> do
         (rv, outDataLen) <- wrapKey' funcListPtr sessHandle mech wrappingKey key dataPtr dataLen
@@ -1856,11 +1950,20 @@ wrapKey mech (Session sessHandle funcListPtr) wrappingKey key dataLen = do
             else BS.packCStringLen (castPtr dataPtr, fromIntegral outDataLen)
 
 
-unwrapKey :: Mech -> Session -> ObjectHandle -> BS.ByteString -> [Attribute] -> IO ObjectHandle
+-- | Unwrap a key from opaque byte string and apply attributes to a resulting key object.
+--
+-- Example unwrapping AES key using RSA private key:
+--
+-- > unwrappedAesKey <- unwrapKey (simpleMech RsaPkcs) sess privRsaKeyHandle wrappedAesKey [Class SecretKey, KeyType AES]
+unwrapKey :: Mech -- ^ Mechanism to use for unwrapping (decryption).
+          -> Session -- ^ Session in which to perform operation.
+          -> ObjectHandle -- ^ Handle to a key which will be used to unwrap (decrypt) key.
+          -> BS.ByteString -- ^ Key to be unwrapped.
+          -> [Attribute] -- ^ Attributes applied to unwrapped key object.
+          -> IO ObjectHandle -- ^ Unwrapped key handle.
 unwrapKey mech (Session sessionHandle functionListPtr) key wrappedKey template = do
     _withAttribs template $ \attribsPtr -> do
-        alloca $ \mechPtr -> do
-            poke mechPtr mech
+        with mech $ \mechPtr -> do
             unsafeUseAsCStringLen wrappedKey $ \(wrappedKeyPtr, wrappedKeyLen) -> do
                 alloca $ \unwrappedKeyPtr -> do
                     rv <- {#call unsafe CK_FUNCTION_LIST.C_UnwrapKey#} functionListPtr sessionHandle mechPtr key (castPtr wrappedKeyPtr) (fromIntegral wrappedKeyLen) attribsPtr (fromIntegral $ length template) unwrappedKeyPtr

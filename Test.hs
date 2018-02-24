@@ -23,7 +23,9 @@ main = do
     lib <- loadLibrary "/usr/local/Cellar/softhsm/2.3.0/lib/softhsm/libsofthsm2.so"
     info <- getInfo lib
     putStrLn(show info)
-    slots <- getSlotList lib True 10
+    allSlotsNum <- getSlotNum lib False
+    putStrLn("total number of slots: " ++ show allSlotsNum)
+    slots <- getSlotList lib True 2
     putStrLn("slots: " ++ show slots)
     let slotId = head slots
 
@@ -71,8 +73,7 @@ main = do
         encData <- PL.encrypt sess (BSL.pack [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
         putStrLn $ show encData
         putStrLn "decryption"
-        decryptInit (simpleMech AesEcb) sess aesKeyHandle
-        decData <- decrypt sess (BSL.toStrict encData) 1000
+        decData <- decrypt (simpleMech AesEcb) sess aesKeyHandle (BSL.toStrict encData) 1000
         putStrLn $ show decData
         putStrLn "generating key pair"
         (pubKeyHandle, privKeyHandle) <- generateKeyPair sess (simpleMech RsaPkcsKeyPairGen) [ModulusBits 2048, Token True, Label "key"] [Token True, Label "key"]
@@ -175,13 +176,11 @@ main = do
             encryptedMessage = AESmod.encryptECB aesKey "hello00000000000"
 
         -- test decryption using RSA key
-        decryptInit (simpleMech RsaPkcs) sess objId
-        dec <- decrypt sess (BSL.toStrict encKey) 1000
+        dec <- decrypt (simpleMech RsaPkcs) sess objId (BSL.toStrict encKey) 1000
         putStrLn $ show dec
 
         -- test decryption using AES key
-        decryptInit (simpleMech AesEcb) sess unwrappedKeyHandle
-        decAes <- decrypt sess encryptedMessage 1000
+        decAes <- decrypt (simpleMech AesEcb) sess unwrappedKeyHandle encryptedMessage 1000
         putStrLn $ show decAes
         logout sess
 
