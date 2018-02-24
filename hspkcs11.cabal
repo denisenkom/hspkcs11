@@ -23,6 +23,7 @@ library
     Include-dirs: include
     exposed-modules:
         System.Crypto.Pkcs11
+        System.Crypto.Pkcs11.Lazy
     Default-language:  Haskell2010
 
 executable pkcs11-tests

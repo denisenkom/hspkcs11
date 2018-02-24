@@ -102,6 +102,8 @@ module System.Crypto.Pkcs11 (
     decrypt,
     encryptInit,
     encrypt,
+    encryptUpdate,
+    encryptFinal,
 
     -- * Digest
     digestInit,
@@ -1668,6 +1670,37 @@ encrypt (Session sessionHandle functionListPtr) encData outLen = do
                         return res
 
 
+{#fun unsafe CK_FUNCTION_LIST.C_EncryptUpdate as encryptUpdate'
+ {`FunctionListPtr',
+  `SessionHandle',
+  unsafeUseAsCUCharPtr* `BS.ByteString',
+  `CULong',
+  castPtr `Ptr CUChar',
+  with* `CULong' peek*} -> `Rv'
+#}
+
+encryptUpdate (Session sessHandle funcListPtr) inData outLen = do
+    allocaBytes (fromIntegral outLen) $ \outPtr -> do
+        (rv, outResLen) <- encryptUpdate' funcListPtr sessHandle inData (fromIntegral $ BS.length inData) outPtr outLen
+        if rv /= 0
+            then fail $ "failed to encrypt part: " ++ (rvToStr rv)
+            else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
+
+{#fun unsafe CK_FUNCTION_LIST.C_EncryptFinal as encryptFinal'
+ {`FunctionListPtr',
+  `SessionHandle',
+  castPtr `Ptr CUChar',
+  with* `CULong' peek*} -> `Rv'
+#}
+
+encryptFinal (Session sessHandle funcListPtr) outLen = do
+    allocaBytes (fromIntegral outLen) $ \outPtr -> do
+        (rv, outResLen) <- encryptFinal' funcListPtr sessHandle outPtr outLen
+        if rv /= 0
+            then fail $ "failed to complete encryption: " ++ (rvToStr rv)
+            else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
+
+
 {#fun unsafe CK_FUNCTION_LIST.C_DigestInit as digestInit'
  {`FunctionListPtr',
   `SessionHandle',
@@ -1692,12 +1725,11 @@ digestInit mech (Session sessHandle funcListPtr) = do
 
 digest :: Session -> BS.ByteString -> CULong -> IO (BS.ByteString)
 digest (Session sessHandle funcListPtr) digestData outLen = do
-    with outLen $ \outLenPtr -> do
-        allocaBytes (fromIntegral outLen) $ \outPtr -> do
-            (rv, outResLen) <- digest' funcListPtr sessHandle digestData (fromIntegral $ BS.length digestData) outPtr outLen
-            if rv /= 0
-                then fail $ "failed to digest: " ++ (rvToStr rv)
-                else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
+    allocaBytes (fromIntegral outLen) $ \outPtr -> do
+        (rv, outResLen) <- digest' funcListPtr sessHandle digestData (fromIntegral $ BS.length digestData) outPtr outLen
+        if rv /= 0
+            then fail $ "failed to digest: " ++ (rvToStr rv)
+            else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
 
 
 

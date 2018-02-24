@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 import qualified Data.ByteString.UTF8 as BU8
 import System.Crypto.Pkcs11
+import qualified System.Crypto.Pkcs11.Lazy as PL
 import Crypto.Random
 import Crypto.Random.AESCtr
 import qualified Codec.Crypto.RSA as RSA
@@ -67,11 +68,11 @@ main = do
         putStrLn $ "generated key " ++ (show aesKeyHandle)
         putStrLn "encryption"
         encryptInit (simpleMech AesEcb) sess aesKeyHandle
-        encData <- encrypt sess (BS.pack [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]) 1000
+        encData <- PL.encrypt sess (BSL.pack [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
         putStrLn $ show encData
         putStrLn "decryption"
         decryptInit (simpleMech AesEcb) sess aesKeyHandle
-        decData <- decrypt sess encData 1000
+        decData <- decrypt sess (BSL.toStrict encData) 1000
         putStrLn $ show decData
         putStrLn "generating key pair"
         (pubKeyHandle, privKeyHandle) <- generateKeyPair sess (simpleMech RsaPkcsKeyPairGen) [ModulusBits 2048, Token True, Label "key"] [Token True, Label "key"]
