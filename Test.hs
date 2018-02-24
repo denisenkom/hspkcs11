@@ -63,7 +63,7 @@ main = do
         putStrLn $ show sessInfo
         login sess User (BU8.fromString "123abc_")
         putStrLn "generate key"
-        aesKeyHandle <- generateKey sess AesKeyGen [ValueLen 16, Token True, Label "testaeskey", Extractable True]
+        aesKeyHandle <- generateKey sess (simpleMech AesKeyGen) [ValueLen 16, Token True, Label "testaeskey", Extractable True]
         putStrLn $ "generated key " ++ (show aesKeyHandle)
         putStrLn "encryption"
         encData <- encrypt AesEcb sess aesKeyHandle (BS.pack [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
@@ -72,7 +72,7 @@ main = do
         decData <- decrypt AesEcb sess aesKeyHandle encData
         putStrLn $ show decData
         putStrLn "generating key pair"
-        (pubKeyHandle, privKeyHandle) <- generateKeyPair sess RsaPkcsKeyPairGen [ModulusBits 2048, Token True, Label "key"] [Token True, Label "key"]
+        (pubKeyHandle, privKeyHandle) <- generateKeyPair sess (simpleMech RsaPkcsKeyPairGen) [ModulusBits 2048, Token True, Label "key"] [Token True, Label "key"]
         putStrLn $ "generated " ++ (show pubKeyHandle) ++ " and " ++ (show privKeyHandle)
         putStrLn "wrap key"
         wrappedAesKey <- wrapKey (simpleMech RsaPkcs) sess pubKeyHandle aesKeyHandle 300
@@ -120,6 +120,17 @@ main = do
                                             KeyType AES,
                                             Value (BS.replicate 16 0)]
         putStrLn $ show createdAesKey
+        putStrLn "generate DH domain parameters"
+        dhParamsHandle <- generateKey sess (simpleMech DhPkcsParameterGen) [PrimeBits 512]
+        dhPrime <- getPrime sess dhParamsHandle
+        dhBase <- getBase sess dhParamsHandle
+        putStrLn $ "generated DH prime=" ++ (show dhPrime) ++ " base=" ++ (show dhBase)
+        --putStrLn "generate DH PKCS key pair"
+        --(pubKeyHandle, privKeyHandle) <- generateKeyPair sess (simpleMech DhPkcsKeyPairGen) [Prime dhPrime, Base dhBase] []
+        --putStrLn $ "generated key " ++ (show pubKeyHandle)
+        --putStrLn "deriving DH key"
+        --deriveKey sess (simpleMech DhPkcsDerive) privKeyHandle []
+
 
     putStrLn "close all sessions"
     closeAllSessions lib slotId

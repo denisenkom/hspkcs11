@@ -40,7 +40,8 @@ module System.Crypto.Pkcs11 (
     setPin,
 
     -- * Mechanisms
-    MechType(RsaPkcsKeyPairGen,RsaPkcs,Rsa9796,AesEcb,AesCbc,AesMac,AesMacGeneral,AesCbcPad,AesCtr,AesKeyGen,Sha256),
+    MechType(RsaPkcsKeyPairGen,RsaPkcs,Rsa9796,AesEcb,AesCbc,AesMac,AesMacGeneral,AesCbcPad,AesCtr,AesKeyGen,Sha256,
+        DhPkcsKeyPairGen,DhPkcsParameterGen,DhPkcsDerive),
     MechInfo,
     getMechanismList,
     getMechanismInfo,
@@ -61,7 +62,8 @@ module System.Crypto.Pkcs11 (
 
     -- * Object attributes
     ObjectHandle,
-    Attribute(Class,Label,KeyType,Modulus,ModulusBits,PublicExponent,Token,Decrypt,ValueLen,Extractable,Value),
+    Attribute(Class,Label,KeyType,Modulus,ModulusBits,PrimeBits,PublicExponent,Prime,Base,Token,Decrypt,ValueLen,
+              Extractable,Value),
     ClassType(PrivateKey,SecretKey),
     KeyTypeValue(RSA,DSA,DH,ECDSA,EC,AES),
     destroyObject,
@@ -81,12 +83,15 @@ module System.Crypto.Pkcs11 (
     getSignFlag,
     getModulus,
     getPublicExponent,
+    getPrime,
+    getBase,
     -- ** Writing attributes
     setAttributes,
 
     -- * Key generation
     generateKey,
     generateKeyPair,
+    deriveKey,
 
     -- * Key wrapping/unwrapping
     wrapKey,
@@ -128,6 +133,7 @@ import Control.Exception
 import qualified Data.ByteString.UTF8 as BU8
 import qualified Data.ByteString as BS
 import Data.ByteString.Unsafe
+import Data.List
 
 #include "pkcs11import.h"
 
@@ -517,11 +523,10 @@ destroyObject (Session sessHandle funcListPtr) objectHandle = do
         else return ()
 
 
-generateKey' :: FunctionListPtr -> SessionHandle -> MechType -> [Attribute] -> IO (Rv, ObjectHandle)
-generateKey' funcListPtr sessHandle mechType attribs = do
+generateKey' :: FunctionListPtr -> SessionHandle -> Mech -> [Attribute] -> IO (Rv, ObjectHandle)
+generateKey' funcListPtr sessHandle mech attribs = do
     alloca $ \keyHandlePtr -> do
-        alloca $ \mechPtr -> do
-            poke mechPtr (Mech {mechType = mechType, mechParamPtr = nullPtr, mechParamSize = 0})
+        with mech $ \mechPtr -> do
             _withAttribs attribs $ \attribsPtr -> do
                 res <- {#call unsafe CK_FUNCTION_LIST.C_GenerateKey#} funcListPtr sessHandle mechPtr attribsPtr (fromIntegral $ length attribs) keyHandlePtr
                 keyHandle <- peek keyHandlePtr
@@ -535,20 +540,19 @@ generateKey' funcListPtr sessHandle mechType attribs = do
 --   alloca- `ObjectHandle'} -> `Rv' fromIntegral#}
 
 
-generateKey :: Session -> MechType -> [Attribute] -> IO ObjectHandle
-generateKey (Session sessHandle funcListPtr) mechType attribs = do
-    (rv, keyHandle) <- generateKey' funcListPtr sessHandle mechType attribs
+generateKey :: Session -> Mech -> [Attribute] -> IO ObjectHandle
+generateKey (Session sessHandle funcListPtr) mech attribs = do
+    (rv, keyHandle) <- generateKey' funcListPtr sessHandle mech attribs
     if rv /= 0
         then fail $ "failed to generate key: " ++ (rvToStr rv)
         else return keyHandle
 
 
-_generateKeyPair :: FunctionListPtr -> SessionHandle -> MechType -> [Attribute] -> [Attribute] -> IO (Rv, ObjectHandle, ObjectHandle)
-_generateKeyPair functionListPtr session mechType pubAttrs privAttrs = do
+_generateKeyPair :: FunctionListPtr -> SessionHandle -> Mech -> [Attribute] -> [Attribute] -> IO (Rv, ObjectHandle, ObjectHandle)
+_generateKeyPair functionListPtr session mech pubAttrs privAttrs = do
     alloca $ \pubKeyHandlePtr -> do
         alloca $ \privKeyHandlePtr -> do
-            alloca $ \mechPtr -> do
-                poke mechPtr (Mech {mechType = mechType, mechParamPtr = nullPtr, mechParamSize = 0})
+            with mech $ \mechPtr -> do
                 _withAttribs pubAttrs $ \pubAttrsPtr -> do
                     _withAttribs privAttrs $ \privAttrsPtr -> do
                         res <- {#call unsafe CK_FUNCTION_LIST.C_GenerateKeyPair#} functionListPtr session mechPtr pubAttrsPtr (fromIntegral $ length pubAttrs) privAttrsPtr (fromIntegral $ length privAttrs) pubKeyHandlePtr privKeyHandlePtr
@@ -705,6 +709,9 @@ rvToStr rv = "unknown value for error " ++ (show rv)
     CKA_EXPONENT_1 as Exponent1Type,
     CKA_EXPONENT_2 as Exponent2Type,
     CKA_COEFFICIENT as CoefficientType,
+    CKA_PRIME as PrimeType,
+    CKA_SUBPRIME as SubPrimeType,
+    CKA_BASE as BaseType,
 
     CKA_PRIME_BITS as PrimeBitsType,
     CKA_SUBPRIME_BITS as SubPrimeBitsType,
@@ -784,11 +791,14 @@ data Attribute = Class ClassType
     | KeyType KeyTypeValue
     | Label String
     | ModulusBits Int
+    | PrimeBits Int
     | Token Bool
     | Decrypt Bool
     | Sign Bool
     | Modulus Integer
     | PublicExponent Integer
+    | Prime Integer
+    | Base Integer
     | ValueLen Integer
     | Value BS.ByteString
     | Extractable Bool
@@ -819,10 +829,13 @@ _attrType (Class _) = ClassType
 _attrType (KeyType _) = KeyTypeType
 _attrType (Label _) = LabelType
 _attrType (ModulusBits _) = ModulusBitsType
+_attrType (PrimeBits _) = PrimeBitsType
 _attrType (Token _) = TokenType
 _attrType (ValueLen _) = ValueLenType
 _attrType (Extractable _) = ExtractableType
 _attrType (Value _) = ValueType
+_attrType (Prime _) = PrimeType
+_attrType (Base _) = BaseType
 
 
 _valueSize :: Attribute -> Int
@@ -830,21 +843,27 @@ _valueSize (Class _) = {#sizeof CK_OBJECT_CLASS#}
 _valueSize (KeyType _) = {#sizeof CK_KEY_TYPE#}
 _valueSize (Label l) = BU8.length $ BU8.fromString l
 _valueSize (ModulusBits _) = {#sizeof CK_ULONG#}
+_valueSize (PrimeBits _) = {#sizeof CK_ULONG#}
 _valueSize (Token _) = {#sizeof CK_BBOOL#}
 _valueSize (ValueLen _) = {#sizeof CK_ULONG#}
 _valueSize (Extractable _) = {#sizeof CK_BBOOL#}
 _valueSize (Value bs) = BS.length bs
+_valueSize (Prime p) = _bigIntLen p
+_valueSize (Base b) = _bigIntLen b
 
 
 _pokeValue :: Attribute -> Ptr () -> IO ()
 _pokeValue (Class c) ptr = poke (castPtr ptr :: Ptr {#type CK_OBJECT_CLASS#}) (fromIntegral $ fromEnum c)
 _pokeValue (KeyType k) ptr = poke (castPtr ptr :: Ptr {#type CK_KEY_TYPE#}) (fromIntegral $ fromEnum k)
 _pokeValue (Label l) ptr = unsafeUseAsCStringLen (BU8.fromString l) $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
-_pokeValue (ModulusBits l) ptr = poke (castPtr ptr :: Ptr {#type CK_ULONG#}) (fromIntegral l :: {#type CK_KEY_TYPE#})
+_pokeValue (ModulusBits l) ptr = poke (castPtr ptr :: Ptr {#type CK_ULONG#}) (fromIntegral l)
+_pokeValue (PrimeBits l) ptr = poke (castPtr ptr :: Ptr {#type CK_ULONG#}) (fromIntegral l)
 _pokeValue (Token b) ptr = poke (castPtr ptr :: Ptr {#type CK_BBOOL#}) (fromBool b :: {#type CK_BBOOL#})
 _pokeValue (ValueLen l) ptr = poke (castPtr ptr :: Ptr {#type CK_ULONG#}) (fromIntegral l :: {#type CK_ULONG#})
 _pokeValue (Extractable b) ptr = poke (castPtr ptr :: Ptr {#type CK_BBOOL#}) (fromBool b :: {#type CK_BBOOL#})
 _pokeValue (Value bs) ptr = unsafeUseAsCStringLen bs $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
+_pokeValue (Prime p) ptr = _pokeBigInt p (castPtr ptr)
+_pokeValue (Base b) ptr = _pokeBigInt b (castPtr ptr)
 
 
 _pokeValues :: [Attribute] -> Ptr () -> IO ()
@@ -876,6 +895,20 @@ _withAttribs attribs f = do
             f attrsPtr
 
 
+-- from http://hackage.haskell.org/package/binary-0.5.0.2/docs/src/Data-Binary.html#unroll
+unroll :: Integer -> [Word8]
+unroll = unfoldr step
+  where
+    step 0 = Nothing
+    step i = Just (fromIntegral i, i `shiftR` 8)
+
+
+_bigIntLen i = length $ unroll i
+
+
+_pokeBigInt i ptr = pokeArray ptr (unroll i)
+
+
 _peekBigInt :: Ptr () -> CULong -> IO Integer
 _peekBigInt ptr len = do
     arr <- peekArray (fromIntegral len) (castPtr ptr :: Ptr Word8)
@@ -892,6 +925,12 @@ _llAttrToAttr (LlAttribute ModulusType ptr len) = do
 _llAttrToAttr (LlAttribute PublicExponentType ptr len) = do
     val <- _peekBigInt ptr len
     return (PublicExponent val)
+_llAttrToAttr (LlAttribute PrimeType ptr len) = do
+    val <- _peekBigInt ptr len
+    return (Prime val)
+_llAttrToAttr (LlAttribute BaseType ptr len) = do
+    val <- _peekBigInt ptr len
+    return (Base val)
 _llAttrToAttr (LlAttribute DecryptType ptr len) = do
     val <- peek (castPtr ptr :: Ptr {#type CK_BBOOL#})
     return $ Decrypt(val /= 0)
@@ -1042,12 +1081,30 @@ findObjects session attribs = do
     finally (_findObjectsEx session) (_findObjectsFinalEx session)
 
 
-generateKeyPair :: Session -> MechType -> [Attribute] -> [Attribute] -> IO (ObjectHandle, ObjectHandle)
-generateKeyPair (Session sessionHandle functionListPtr) mechType pubKeyAttrs privKeyAttrs = do
-    (rv, pubKeyHandle, privKeyHandle) <- _generateKeyPair functionListPtr sessionHandle mechType pubKeyAttrs privKeyAttrs
+generateKeyPair :: Session -> Mech -> [Attribute] -> [Attribute] -> IO (ObjectHandle, ObjectHandle)
+generateKeyPair (Session sessionHandle functionListPtr) mech pubKeyAttrs privKeyAttrs = do
+    (rv, pubKeyHandle, privKeyHandle) <- _generateKeyPair functionListPtr sessionHandle mech pubKeyAttrs privKeyAttrs
     if rv /= 0
         then fail $ "failed to generate key pair: " ++ (rvToStr rv)
         else return (pubKeyHandle, privKeyHandle)
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_DeriveKey as deriveKey'
+ {`FunctionListPtr',
+  `SessionHandle',
+  with* `Mech',
+  `ObjectHandle',
+  `LlAttributePtr',
+  `CULong',
+  alloca- `ObjectHandle' peek*} -> `Rv'
+#}
+
+deriveKey (Session sessHandle funcListPtr) mech baseKeyHandle attribs = do
+    _withAttribs attribs $ \attribsPtr -> do
+        (rv, createdHandle) <- deriveKey' funcListPtr sessHandle mech baseKeyHandle attribsPtr (fromIntegral $ length attribs)
+        if rv /= 0
+            then fail $ "failed to derive key: " ++ (rvToStr rv)
+            else return createdHandle
 
 
 {#fun unsafe CK_FUNCTION_LIST.C_CreateObject as createObject'
@@ -1149,6 +1206,14 @@ getPublicExponent :: Session -> ObjectHandle -> IO Integer
 getPublicExponent sess objHandle = do
     (PublicExponent v) <- getObjectAttr sess objHandle PublicExponentType
     return v
+
+getPrime sess objHandle = do
+    (Prime p) <- getObjectAttr sess objHandle PrimeType
+    return p
+
+getBase sess objHandle = do
+    (Base p) <- getObjectAttr sess objHandle BaseType
+    return p
 
 
 {#fun unsafe CK_FUNCTION_LIST.C_SetAttributeValue as setAttributeValue'
