@@ -13,32 +13,28 @@ cabal-version:  >=1.10
 extra-source-files: include/*.h
 
 library
+    hs-source-dirs: src
     build-tools:    c2hs
     build-depends:
         base,
         unix,
         utf8-string,
-        bytestring,
-        RSA,
-        crypto-api
+        bytestring
     Include-dirs: include
     exposed-modules:
         System.Crypto.Pkcs11
     Default-language:  Haskell2010
 
 executable pkcs11-tests
-    build-tools:   c2hs
     main-is:            Test.hs
-    Include-dirs: include
-    other-modules:      System.Crypto.Pkcs11
     build-depends:
         base,
-        testpack,
+        hspkcs11,
         unix,
         utf8-string,
         bytestring,
-        RSA,
         crypto-api,
         cprng-aes,
-        cipher-aes
+        cipher-aes,
+        RSA
     default-language:   Haskell2010
