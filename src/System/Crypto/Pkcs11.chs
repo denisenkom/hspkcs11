@@ -6,13 +6,16 @@ module System.Crypto.Pkcs11 (
     releaseLibrary,
 
     -- ** Reading library information
-    Info,
     getInfo,
+    LibraryInfo,
     infoCryptokiVersion,
     infoManufacturerId,
     infoFlags,
     infoLibraryDescription,
     infoLibraryVersion,
+    Version,
+    versionMajor,
+    versionMinor,
 
     -- * Slots
     SlotId,
@@ -20,8 +23,8 @@ module System.Crypto.Pkcs11 (
     getSlotList,
 
     -- ** Reading slot information
-    SlotInfo,
     getSlotInfo,
+    SlotInfo,
     slotInfoDescription,
     slotInfoManufacturerId,
     slotInfoFlags,
@@ -41,26 +44,32 @@ module System.Crypto.Pkcs11 (
     setPin,
 
     -- * Mechanisms
-    Mech,
+    getMechanismList,
+    getMechanismInfo,
     MechType(RsaPkcsKeyPairGen,RsaPkcs,Rsa9796,AesEcb,AesCbc,AesMac,AesMacGeneral,AesCbcPad,AesCtr,AesKeyGen,Sha256,
         DhPkcsKeyPairGen,DhPkcsParameterGen,DhPkcsDerive),
     MechInfo,
-    getMechanismList,
-    getMechanismInfo,
     mechInfoMinKeySize,
     mechInfoMaxKeySize,
     mechInfoFlags,
+    Mech,
     simpleMech,
 
     -- * Session management
     Session,
-    UserType(User,SecurityOfficer,ContextSpecific),
     withSession,
+    login,
+    UserType(User,SecurityOfficer,ContextSpecific),
+    logout,
     closeAllSessions,
     getSessionInfo,
+    SessionInfo,
+    sessionInfoSlotId,
+    sessionInfoState,
+    sessionInfoFlags,
+    sessionInfoDeviceError,
+    SessionState(ROPublicSession,ROUserFunctions,RWPublicSession,RWUserFunctions,RWSOFunctions),
     getOperationState,
-    login,
-    logout,
 
     -- * Object attributes
     ObjectHandle,
@@ -109,25 +118,20 @@ module System.Crypto.Pkcs11 (
     encryptFinal,
 
     -- * Digest
-    digestInit,
     digest,
+    digestInit,
 
     -- * Signing
-    signInit,
     sign,
-    signRecoverInit,
-    signRecover,
-    verifyInit,
     verify,
+    signRecover,
+    signInit,
+    verifyInit,
+    signRecoverInit,
 
     -- * Random
     seedRandom,
     generateRandom,
-
-    -- * Misc
-    Version,
-    versionMajor,
-    versionMinor,
 ) where
 import Foreign
 import Foreign.Marshal.Utils
@@ -179,7 +183,7 @@ type SessionHandle = {#type CK_SESSION_HANDLE#}
 {#default out `SessionHandle' [CK_SESSION_HANDLE] fromIntegral#}
 
 {#pointer *CK_FUNCTION_LIST as FunctionListPtr#}
-{#pointer *CK_INFO as InfoPtr -> Info#}
+{#pointer *CK_INFO as LibraryInfoPtr -> LibraryInfo#}
 {#pointer *CK_SLOT_INFO as SlotInfoPtr -> SlotInfo#}
 {#pointer *CK_TOKEN_INFO as TokenInfoPtr -> TokenInfo#}
 {#pointer *CK_SESSION_INFO as SessionInfoPtr -> SessionInfo#}
@@ -208,7 +212,8 @@ instance Storable Version where
     {#set CK_VERSION->major#} p (fromIntegral $ versionMajor x)
     {#set CK_VERSION->minor#} p (fromIntegral $ versionMinor x)
 
-data Info = Info {
+-- | Represents general library information. Returned by 'getInfo' function.
+data LibraryInfo = LibraryInfo {
     -- | Cryptoki interface version number, for compatibility with future revisions of this interface
     infoCryptokiVersion :: Version,
     -- | ID of the Cryptoki library manufacturer
@@ -220,7 +225,7 @@ data Info = Info {
     infoLibraryVersion :: Version
 } deriving (Show)
 
-instance Storable Info where
+instance Storable LibraryInfo where
   sizeOf _ = (2+32+4+32+10+2)
   alignment _ = 1
   peek p = do
@@ -231,7 +236,7 @@ instance Storable Info where
     libraryDescription <- peekCStringLen ((p `plusPtr` (2+32+4+10)), 32)
     --libraryDescription <- {# get CK_INFO->libraryDescription #} p
     libVer <- peek (p `plusPtr` (2+32+4+32+10)) :: IO Version
-    return Info {infoCryptokiVersion=ver,
+    return LibraryInfo {infoCryptokiVersion=ver,
                  infoManufacturerId=manufacturerId,
                  infoFlags=fromIntegral flags,
                  infoLibraryDescription=libraryDescription,
@@ -239,10 +244,6 @@ instance Storable Info where
                  }
   poke p v = do
     error "not implemented"
-
-
-peekInfo :: Ptr Info -> IO Info
-peekInfo ptr = peek ptr
 
 
 data SlotInfo = SlotInfo {
@@ -308,9 +309,13 @@ instance Storable TokenInfo where
         error "not implemented"
 
 
+-- | Represent information about a mechanism.  Returned by 'getMechanismInfo' function.
 data MechInfo = MechInfo {
+    -- | Minimum size of a key in bits or bytes depending on the mechanism.
     mechInfoMinKeySize :: Int,
+    -- | Maximum size of a key in bits or bytes depending on the mechanism.
     mechInfoMaxKeySize :: Int,
+    -- | Mechanism's flags as described in https://www.cryptsoft.com/pkcs11doc/v220/pkcs11__all_8h.html#aCK_MECHANISM_INFO
     mechInfoFlags :: Int
 } deriving (Show)
 
@@ -327,12 +332,15 @@ instance Storable MechInfo where
     {#set CK_MECHANISM_INFO->flags#} p (fromIntegral $ mechInfoFlags x)
 
 
+-- | Represents mechanism with parameters to be used in cryptographic operation.  Parameterless mechanism can be
+-- created with 'simpleMech' function.  Few example operations using this data structure are 'encrypt', 'generateKey'.
 data Mech = Mech {
     mechType :: MechType,
     mechParamPtr :: Ptr (),
     mechParamSize :: Int
 }
 
+-- | Return parameterless mechanism which can be used in cryptographic operation.
 simpleMech :: MechType -> Mech
 simpleMech mechType = Mech mechType nullPtr 0
 
@@ -347,21 +355,28 @@ instance Storable Mech where
         poke (p `plusPtr` ({#sizeof CK_MECHANISM_TYPE#} + {#sizeof CK_VOID_PTR#})) (mechParamSize x)
 
 
+-- | Represent session information.  Returned by 'getSessionInfo' function.
 data SessionInfo = SessionInfo {
-    slotId :: SlotId,
-    state :: CULong,
-    flags :: CULong,
-    deviceError :: CULong
+    -- | Slot for which session is open
+    sessionInfoSlotId :: SlotId,
+    -- | State of the session, e.g. 'ROPublicSession', 'RWUserFunctions'.
+    sessionInfoState :: SessionState,
+    -- | Session flags as described in https://www.cryptsoft.com/pkcs11doc/v220/pkcs11__all_8h.html#aCK_SESSION_INFO.
+    sessionInfoFlags :: CULong,
+    -- | Device specific error code.
+    sessionInfoDeviceError :: CULong
 } deriving (Show)
+
 
 instance Storable SessionInfo where
     sizeOf _ = {#sizeof CK_SESSION_INFO#}
     alignment _ = 1
     peek p = SessionInfo
         <$> liftM fromIntegral ({#get CK_SESSION_INFO->slotID#} p)
-        <*> {#get CK_SESSION_INFO->state#} p
+        <*> liftM culong2sessState ({#get CK_SESSION_INFO->state#} p)
         <*> {#get CK_SESSION_INFO->flags#} p
         <*> {#get CK_SESSION_INFO->ulDeviceError#} p
+        where culong2sessState val = toEnum $ fromIntegral val
     poke p x = do
         error "not implemented"
 
@@ -372,7 +387,7 @@ instance Storable SessionInfo where
 
 {#fun unsafe CK_FUNCTION_LIST.C_GetInfo as getInfo'
  {`FunctionListPtr',
-  alloca- `Info' peekInfo* } -> `Rv' fromIntegral#}
+  alloca- `LibraryInfo' peek* } -> `Rv' fromIntegral#}
 
 {#fun unsafe CK_FUNCTION_LIST.C_GetSlotList as getSlotList'
  {`FunctionListPtr',
@@ -381,18 +396,25 @@ instance Storable SessionInfo where
   `CULong' peek*} -> `Rv'
 #}
 
+-- | Return number of slots in the system.
+getSlotNum :: Library -- ^ Library to be used for operation.
+           -> Bool -- ^ If True will return only slots with tokens in them.
+           -> IO (CULong) -- ^ Number of slots.
 getSlotNum (Library _ functionListPtr) active = do
     (rv, outNum) <- getSlotList' functionListPtr active nullPtr 0
     if rv /= 0
         then fail $ "failed to get number of slots " ++ (rvToStr rv)
         else return outNum
 
--- | Allows to obtain a list of slots in the system
+-- | Get a list of slot IDs in the system.  Can filter for slots with attached tokens.
 --
 -- > slotsIds <- getSlotList lib True 10
 --
 -- In this example retrieves list of, at most 10 (third parameter) slot identifiers with tokens present (second parameter is set to True)
-getSlotList :: Library -> Bool -> Int -> IO [SlotId]
+getSlotList :: Library -- ^ Library to be used for operation.
+            -> Bool -- ^ If True will return only slots with tokens in them.
+            -> Int -- ^ Maximum number of slot IDs to be returned.
+            -> IO [SlotId]
 getSlotList (Library _ functionListPtr) active num = do
     allocaArray num $ \array -> do
         (rv, outNum) <- getSlotList' functionListPtr active array (fromIntegral num)
@@ -512,6 +534,15 @@ findObjects' functionListPtr session maxObjects = do
 
 
 {#enum define UserType {CKU_USER as User, CKU_SO as SecurityOfficer, CKU_CONTEXT_SPECIFIC as ContextSpecific} deriving (Eq) #}
+
+{#enum define SessionState {
+    CKS_RO_PUBLIC_SESSION as ROPublicSession,
+    CKS_RO_USER_FUNCTIONS as ROUserFunctions,
+    CKS_RW_PUBLIC_SESSION as RWPublicSession,
+    CKS_RW_USER_FUNCTIONS as RWUserFunctions,
+    CKS_RW_SO_FUNCTIONS as RWSOFunctions
+    } deriving (Eq,Show)
+#}
 
 
 {#fun unsafe CK_FUNCTION_LIST.C_GetOperationState as getOperationState'
@@ -990,6 +1021,7 @@ data Library = Library {
 }
 
 
+-- | Represent session. Created by 'withSession' function.
 data Session = Session SessionHandle FunctionListPtr
 
 
@@ -1016,8 +1048,8 @@ releaseLibrary lib = do
     dlclose $ libraryHandle lib
 
 
--- | Returns general information about Cryptoki
-getInfo :: Library -> IO Info
+-- | Get general information about Cryptoki library
+getInfo :: Library -> IO LibraryInfo
 getInfo (Library _ functionListPtr) = do
     (rv, info) <- getInfo' functionListPtr
     if rv /= 0
@@ -1025,7 +1057,7 @@ getInfo (Library _ functionListPtr) = do
         else return info
 
 
--- | Initializes a token.  All objects created by user on the token are destroyed.
+-- | Initialize a token in a given slot.  All objects created by user on the token are destroyed.
 initToken :: Library -- ^ PKCS#11 library
           -> SlotId  -- ^ slot id in which to initialize token
           -> BU8.ByteString -- ^ token's security officer password
@@ -1076,7 +1108,12 @@ _closeSessionEx (Session sessionHandle functionListPtr) = do
         else return ()
 
 
-withSession :: Library -> SlotId -> Bool -> (Session -> IO a) -> IO a
+-- | Opens a read-only or read-write session with a token in a given slot and then closes it after callback function is finished.
+withSession :: Library -- ^ Library to use.
+            -> SlotId -- ^ Slot ID for which to open session.
+            -> Bool -- ^ If True will open writable session, otherwise will open read-only session.
+            -> (Session -> IO a) -- ^ Callback function which is executed while session is open.
+            -> IO a -- ^ Returns a result of callback function.
 withSession lib slotId writable f = do
     let flags = if writable then _rwSession else 0
     bracket
@@ -1285,7 +1322,8 @@ setAttributes (Session sessHandle funcListPtr) objHandle attribs = do
             else return ()
 
 
--- | Initializes normal user's PIN.  Session should be logged in by SO user.
+-- | Initializes normal user's PIN.  Session should be logged in by SO user in other words it should be in
+-- 'RWSOFunctions' state.
 initPin :: Session -> BU8.ByteString -> IO ()
 initPin (Session sessHandle funcListPtr) pin = do
     rv <- initPin' funcListPtr sessHandle pin
@@ -1805,8 +1843,19 @@ digestInit mech (Session sessHandle funcListPtr) = do
   with* `CULong' peek*} -> `Rv'
 #}
 
-digest :: Session -> BS.ByteString -> CULong -> IO (BS.ByteString)
-digest (Session sessHandle funcListPtr) digestData outLen = do
+-- | Calculates digest aka hash of a data using provided mechanism.
+--
+-- Example calculating SHA256 hash:
+--
+-- >>> digest (simpleMech Sha256) sess (replicate 16 0) 1000
+-- "7G\b\255\247q\157\213\151\158\200u\213l\210(om<\247\236\&1z;%c*\171(\236\&7\187"
+digest :: Mech -- ^ Digest mechanism.
+       -> Session -- ^ Session to be used for digesting.
+       -> BS.ByteString -- ^ Data to be digested.
+       -> CULong -- ^ Maximum number of bytes to be returned.
+       -> IO (BS.ByteString) -- ^ Resulting digest.
+digest mech (Session sessHandle funcListPtr) digestData outLen = do
+    digestInit mech (Session sessHandle funcListPtr)
     allocaBytes (fromIntegral outLen) $ \outPtr -> do
         (rv, outResLen) <- digest' funcListPtr sessHandle digestData (fromIntegral $ BS.length digestData) outPtr outLen
         if rv /= 0
@@ -1845,9 +1894,19 @@ signInit mech (Session sessHandle funcListPtr) objHandle = do
         then fail $ "failed to initialize signing operation: " ++ (rvToStr rv)
         else return ()
 
-
-sign :: Session -> BS.ByteString -> CULong -> IO (BS.ByteString)
-sign (Session sessHandle funcListPtr) signData outLen = do
+-- | Signs data using provided mechanism and key.
+--
+-- Example signing with RSA PKCS#1
+--
+-- > signature <- sign (simpleMech RsaPkcs) sess privKeyHandle signedData 1000
+sign :: Mech -- ^ Mechanism to use for signing.
+     -> Session -- ^ Session to work in.
+     -> ObjectHandle -- ^ Key handle.
+     -> BS.ByteString -- ^ Data to be signed.
+     -> CULong -- ^ Maximum number of bytes to be returned.
+     -> IO (BS.ByteString) -- ^ Signature.
+sign mech (Session sessHandle funcListPtr) key signData outLen = do
+    signInit mech (Session sessHandle funcListPtr) key
     with outLen $ \outLenPtr -> do
         allocaBytes (fromIntegral outLen) $ \outPtr -> do
             (rv, outResLen) <- sign' funcListPtr sessHandle signData (fromIntegral $ BS.length signData) outPtr outLen
@@ -1912,8 +1971,20 @@ verifyInit (Session sessHandle funcListPtr) mech objHandle = do
         then fail $ "failed to initialize verify operation: " ++ (rvToStr rv)
         else return ()
 
-verify :: Session -> BS.ByteString -> BS.ByteString -> IO (Bool)
-verify (Session sessHandle funcListPtr) signData signatureData = do
+-- | Verifies signature using provided mechanism and key.
+--
+-- Example signature verification using RSA public key:
+--
+-- >>> verify (simpleMech RsaPkcs) sess pubKeyHandle signedData signature
+-- True
+verify :: Mech -- ^ Mechanism to be used for signature validation.
+       -> Session -- ^ Session to be used.
+       -> ObjectHandle -- ^ Key handle.
+       -> BS.ByteString -- ^ Signed data.
+       -> BS.ByteString -- ^ Signature.
+       -> IO (Bool) -- ^ True is signature is valid, False otherwise.
+verify mech (Session sessHandle funcListPtr) keyHandle signData signatureData = do
+    verifyInit (Session sessHandle funcListPtr) mech keyHandle
     rv <- verify' funcListPtr sessHandle signData (fromIntegral $ BS.length signData) signatureData (fromIntegral $ BS.length signatureData)
     case rv of 0 -> return True
                {#const CKR_SIGNATURE_INVALID#} -> return False
@@ -1981,6 +2052,7 @@ unwrapKey mech (Session sessionHandle functionListPtr) key wrappedKey template =
   `CULong'} -> `Rv'
 #}
 
+-- | Mixes provided seed data with token's seed
 seedRandom (Session sessHandle funcListPtr) seedData = do
     rv <- seedRandom' funcListPtr sessHandle seedData (fromIntegral $ BS.length seedData)
     if rv /= 0
@@ -1995,6 +2067,10 @@ seedRandom (Session sessHandle funcListPtr) seedData = do
   `CULong'} -> `Rv'
 #}
 
+-- | Generates random data using token's RNG.
+generateRandom :: Session -- ^ Session to work on.
+               -> CULong -- ^ Number of bytes to generate.
+               -> IO BS.ByteString -- ^ Generated random bytes.
 generateRandom (Session sessHandle funcListPtr) randLen = do
     allocaBytes (fromIntegral randLen) $ \randPtr -> do
         rv <- generateRandom' funcListPtr sessHandle randPtr randLen

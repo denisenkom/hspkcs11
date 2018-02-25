@@ -83,19 +83,15 @@ main = do
         putStrLn $ show wrappedAesKey
         putStrLn "unwrap key"
         unwrappedAesKey <- unwrapKey (simpleMech RsaPkcs) sess privKeyHandle wrappedAesKey [Class SecretKey, KeyType AES]
-        putStrLn "signInit"
-        signInit (simpleMech RsaPkcs) sess privKeyHandle
         putStrLn "sign"
         let signedData = BS.pack [0,0,0,0]
-        signature <- sign sess signedData 1000
+        signature <- sign (simpleMech RsaPkcs) sess privKeyHandle signedData 1000
         putStrLn $ show signature
-        putStrLn "verifyInit"
-        verifyInit sess (simpleMech RsaPkcs) pubKeyHandle
         --putStrLn "get operation state"
         --operState <- getOperationState sess 1000
         --putStrLn $ show operState
         putStrLn "verify"
-        verRes <- verify sess signedData signature
+        verRes <- verify (simpleMech RsaPkcs) sess pubKeyHandle signedData signature
         putStrLn $ "verify result " ++ (show verRes)
         --putStrLn "signRecoverInit"
         --signRecoverInit (simpleMech Rsa9796) sess privKeyHandle
@@ -114,10 +110,8 @@ main = do
         putStrLn $ show copiedObjHandle
         putStrLn "deleting object"
         destroyObject sess aesKeyHandle
-        putStrLn "digestInit"
-        digestInit (simpleMech Sha256) sess
         putStrLn "digest"
-        digestedData <- digest sess signedData 1000
+        digestedData <- digest (simpleMech Sha256) sess (BS.replicate 16 0) 1000
         putStrLn $ show digestedData
         putStrLn "create object"
         createdAesKey <- createObject sess [Class SecretKey,
