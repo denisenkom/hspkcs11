@@ -35,6 +35,7 @@ test-suite pkcs11-tests
         unix,
         utf8-string,
         bytestring,
+        base64-bytestring,
         crypto-api,
         cprng-aes,
         cipher-aes,

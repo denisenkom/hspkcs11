@@ -8,6 +8,7 @@ import qualified Codec.Crypto.RSA as RSA
 import qualified Crypto.Cipher.AES as AESmod
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
+import qualified Data.ByteString.Base64 as B64
 import Numeric
 
 
@@ -128,6 +129,18 @@ main = do
         --putStrLn $ "generated key " ++ (show pubKeyHandle)
         --putStrLn "deriving DH key"
         --deriveKey sess (simpleMech DhPkcsDerive) privKeyHandle []
+
+        putStrLn "generating EC key pair using prime256v1"
+        (ecPubKey, ecPrivKey) <- generateKeyPair sess (simpleMech EcKeyPairGen) [EcParams (B64.decodeLenient "BggqhkjOPQMBBw==")] []
+        derEcPoint <- getEcPoint sess ecPubKey
+        derEcParams <- getEcdsaParams sess ecPubKey
+        putStrLn $ "EC point DER=" ++ (show $ B64.encode derEcPoint) ++ " params DER=" ++ (show $ B64.encode derEcParams)
+        putStrLn "signing with ECDSA"
+        ecSignature <- sign (simpleMech Ecdsa) sess ecPrivKey signedData 1024
+        putStrLn $ show ecSignature
+        putStrLn "verifying signature"
+        ecVerifyRes <- verify (simpleMech Ecdsa) sess ecPubKey signedData ecSignature
+        putStrLn $ show ecVerifyRes
 
 
     putStrLn "close all sessions"

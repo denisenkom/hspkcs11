@@ -47,7 +47,8 @@ module System.Crypto.Pkcs11 (
     getMechanismList,
     getMechanismInfo,
     MechType(RsaPkcsKeyPairGen,RsaPkcs,Rsa9796,AesEcb,AesCbc,AesMac,AesMacGeneral,AesCbcPad,AesCtr,AesKeyGen,Sha256,
-        DhPkcsKeyPairGen,DhPkcsParameterGen,DhPkcsDerive),
+        DhPkcsKeyPairGen,DhPkcsParameterGen,DhPkcsDerive,
+        EcKeyPairGen,EcdsaKeyPairGen,Ecdsa,EcdsaSha1),
     MechInfo,
     mechInfoMinKeySize,
     mechInfoMaxKeySize,
@@ -74,7 +75,7 @@ module System.Crypto.Pkcs11 (
     -- * Object attributes
     ObjectHandle,
     Attribute(Class,Label,KeyType,Modulus,ModulusBits,PrimeBits,PublicExponent,Prime,Base,Token,Decrypt,ValueLen,
-              Extractable,Value),
+              Extractable,Value,EcParams,EcPoint),
     ClassType(Data,Certificate,PublicKey,PrivateKey,SecretKey,HWFeature,DomainParameters,Mechanism),
     KeyTypeValue(RSA,DSA,DH,ECDSA,EC,AES),
     destroyObject,
@@ -96,6 +97,8 @@ module System.Crypto.Pkcs11 (
     getPublicExponent,
     getPrime,
     getBase,
+    getEcdsaParams,
+    getEcPoint,
     -- ** Writing attributes
     setAttributes,
 
@@ -875,6 +878,9 @@ data Attribute = Class ClassType -- ^ class of an object, e.g. 'PrivateKey', 'Se
     | ValueLen Int -- ^ length in bytes of the corresponding 'Value' attribute
     | Value BS.ByteString -- ^ object's value attribute, for example it is a DER encoded certificate for certificate objects
     | Extractable Bool -- ^ allows or denys extraction of certain attributes of private keys
+    | EcParams BS.ByteString -- ^ DER encoded ANSI X9.62 parameters value for elliptic-curve algorithm
+    | EcdsaParams BS.ByteString -- ^ DER encoded ANSI X9.62 parameters value for elliptic-curve algorithm
+    | EcPoint BS.ByteString -- ^ DER encoded ANSI X9.62 point for elliptic-curve algorithm
     deriving (Show)
 
 data LlAttribute = LlAttribute {
@@ -909,6 +915,8 @@ _attrType (Extractable _) = ExtractableType
 _attrType (Value _) = ValueType
 _attrType (Prime _) = PrimeType
 _attrType (Base _) = BaseType
+_attrType (EcParams _) = EcParamsType
+_attrType (EcPoint _) = EcPointType
 
 
 _valueSize :: Attribute -> Int
@@ -923,6 +931,8 @@ _valueSize (Extractable _) = {#sizeof CK_BBOOL#}
 _valueSize (Value bs) = BS.length bs
 _valueSize (Prime p) = _bigIntLen p
 _valueSize (Base b) = _bigIntLen b
+_valueSize (EcParams bs) = BS.length bs
+_valueSize (EcPoint bs) = BS.length bs
 
 
 _pokeValue :: Attribute -> Ptr () -> IO ()
@@ -937,6 +947,8 @@ _pokeValue (Extractable b) ptr = poke (castPtr ptr :: Ptr {#type CK_BBOOL#}) (fr
 _pokeValue (Value bs) ptr = unsafeUseAsCStringLen bs $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
 _pokeValue (Prime p) ptr = _pokeBigInt p (castPtr ptr)
 _pokeValue (Base b) ptr = _pokeBigInt b (castPtr ptr)
+_pokeValue (EcParams bs) ptr = unsafeUseAsCStringLen bs $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
+_pokeValue (EcPoint bs) ptr = unsafeUseAsCStringLen bs $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
 
 
 _pokeValues :: [Attribute] -> Ptr () -> IO ()
@@ -1010,6 +1022,16 @@ _llAttrToAttr (LlAttribute DecryptType ptr len) = do
 _llAttrToAttr (LlAttribute SignType ptr len) = do
     val <- peek (castPtr ptr :: Ptr {#type CK_BBOOL#})
     return $ Sign(val /= 0)
+_llAttrToAttr (LlAttribute EcParamsType ptr len) = do
+    val <- BS.packCStringLen (castPtr ptr, fromIntegral len)
+    return $ EcParams val
+_llAttrToAttr (LlAttribute EcdsaParamsType ptr len) = do
+    val <- BS.packCStringLen (castPtr ptr, fromIntegral len)
+    return $ EcdsaParams val
+_llAttrToAttr (LlAttribute EcPointType ptr len) = do
+    val <- BS.packCStringLen (castPtr ptr, fromIntegral len)
+    return $ EcPoint val
+_llAttrToAttr (LlAttribute typ _ _) = error("_llAttrToAttr needs to be implemented for " ++ (show typ))
 
 
 -- High level API starts here
@@ -1303,6 +1325,14 @@ getPrime sess objHandle = do
 getBase sess objHandle = do
     (Base p) <- getObjectAttr sess objHandle BaseType
     return p
+
+getEcdsaParams sess objHandle = do
+    (EcdsaParams bs) <- getObjectAttr sess objHandle EcParamsType
+    return bs
+
+getEcPoint sess objHandle = do
+    (EcPoint bs) <- getObjectAttr sess objHandle EcPointType
+    return bs
 
 
 {#fun unsafe CK_FUNCTION_LIST.C_SetAttributeValue as setAttributeValue'
