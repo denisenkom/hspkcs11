@@ -10,7 +10,7 @@ case $BUILD in
     if [ -f configure.ac ]; then autoreconf -i; fi
     cabal configure -v2  # -v2 provides useful information for debugging
     cabal build   # this builds all libraries and executables (including tests/benchmarks)
-    cabal test
+    #cabal test (disabled, requires softhsm)
     cabal sdist   # tests that a source-distribution can be generated
 
     # Check that the resulting source distribution can be built & installed.
