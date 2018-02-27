@@ -7,7 +7,6 @@ import Foreign.Marshal.Utils
 import Foreign.Marshal.Alloc
 import Foreign.C
 import Foreign.Ptr
-import System.Posix.DynamicLinker
 import Control.Monad
 import Control.Exception
 import qualified Data.ByteString.UTF8 as BU8
@@ -57,6 +56,8 @@ type SessionHandle = {#type CK_SESSION_HANDLE#}
 {#pointer *CK_ATTRIBUTE as LlAttributePtr -> LlAttribute#}
 {#pointer *CK_MECHANISM_INFO as MechInfoPtr -> MechInfo#}
 {#pointer *CK_MECHANISM as MechPtr -> Mech#}
+
+errSignatureInvalid = {#const CKR_SIGNATURE_INVALID#}
 
 -- defined this one manually because I don't know how to make c2hs to define it yet
 type GetFunctionListFun = (C2HSImp.Ptr (FunctionListPtr)) -> (IO C2HSImp.CULong)
@@ -380,6 +381,12 @@ _login functionListPtr session userType pin = do
     unsafeUseAsCStringLen pin $ \(pinPtr, pinLen) -> do
         res <- {#call unsafe CK_FUNCTION_LIST.C_Login#} functionListPtr session (fromIntegral $ fromEnum userType) (castPtr pinPtr) (fromIntegral pinLen)
         return (fromIntegral res)
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_Logout as logout'
+ {`FunctionListPtr',
+  `SessionHandle'} ->  `Rv'
+#}
 
 
 {#fun unsafe CK_FUNCTION_LIST.C_DestroyObject as destroyObject'
@@ -1250,7 +1257,7 @@ getObjectAttr' functionListPtr sessionHandle objHandle attrType = do
 {#fun unsafe CK_FUNCTION_LIST.C_Decrypt as decrypt'
  {`FunctionListPtr',
   `SessionHandle',
-  unsafeUseAsCUCharPtr* `BS.ByteString',
+  castPtr `Ptr CUChar',
   `CULong',
   castPtr `Ptr CUChar',
   with* `CULong' peek*} -> `Rv'
@@ -1267,7 +1274,7 @@ getObjectAttr' functionListPtr sessionHandle objHandle attrType = do
 {#fun unsafe CK_FUNCTION_LIST.C_Encrypt as encrypt'
  {`FunctionListPtr',
   `SessionHandle',
-  unsafeUseAsCUCharPtr* `BS.ByteString',
+  castPtr `Ptr CUChar',
   `CULong',
   castPtr `Ptr CUChar',
   with* `CULong' peek*} -> `Rv'
@@ -1363,6 +1370,17 @@ unsafeUseAsCUCharPtr bs fn =
   `CULong'} -> `Rv'
 #}
 
+{#fun unsafe CK_FUNCTION_LIST.C_UnwrapKey as unwrapKey'
+ {`FunctionListPtr',
+  `SessionHandle',
+  with* `Mech',
+  `ObjectHandle',
+  castPtr `Ptr CUChar',
+  `CULong',
+  `LlAttributePtr',
+  `CULong',
+  alloca- `ObjectHandle' peek*} -> `Rv'
+#}
 
 {#fun unsafe CK_FUNCTION_LIST.C_WrapKey as wrapKey'
  {`FunctionListPtr',
