@@ -1,3 +1,4 @@
+-- | This is the main module that contains bindings for PKCS#11 interface.
 module System.Crypto.Pkcs11 (
     -- * Library
     Library,
@@ -221,7 +222,8 @@ destroyObject (Session sessHandle funcListPtr) objectHandle = do
 -- > dhParamsHandle <- generateKey sess (simpleMech DhPkcsParameterGen) [PrimeBits 1028]
 generateKey :: Session -> Mech -> [Attribute] -> IO ObjectHandle
 generateKey (Session sessHandle funcListPtr) mech attribs = do
-    (rv, keyHandle) <- generateKey' funcListPtr sessHandle mech attribs
+  _withAttribs attribs $ \attrPtr -> do
+    (rv, keyHandle) <- generateKey' funcListPtr sessHandle mech attrPtr (fromIntegral $ length attribs)
     if rv /= 0
         then fail $ "failed to generate key: " ++ (rvToStr rv)
         else return keyHandle
@@ -294,9 +296,10 @@ withSession lib slotId writable f = do
 
 
 
-_findObjectsInitEx :: Session -> [Attribute] -> IO ()
-_findObjectsInitEx (Session sessionHandle functionListPtr) attribs = do
-    rv <- findObjectsInit' functionListPtr sessionHandle attribs
+_findObjectsInit :: Session -> [Attribute] -> IO ()
+_findObjectsInit (Session sessionHandle functionListPtr) attribs = do
+  _withAttribs attribs $ \attribsPtr -> do
+    rv <- findObjectsInit' functionListPtr sessionHandle attribs (fromIntegral $ length attribs)
     if rv /= 0
         then fail $ "failed to initialize search: " ++ (rvToStr rv)
         else return ()
@@ -321,7 +324,7 @@ _findObjectsFinalEx (Session sessionHandle functionListPtr) = do
 -- | Searches current session for objects matching provided attributes list, returns a list of matching object handles
 findObjects :: Session -> [Attribute] -> IO [ObjectHandle]
 findObjects session attribs = do
-    _findObjectsInitEx session attribs
+    _findObjectsInit session attribs
     finally (_findObjectsEx session) (_findObjectsFinalEx session)
 
 
@@ -734,10 +737,13 @@ generateRandom (Session sessHandle funcListPtr) randLen = do
 -- | Obtains a list of mechanism types supported by a token
 getMechanismList :: Library -> SlotId -> Int -> IO [Int]
 getMechanismList (Library _ functionListPtr) slotId maxMechanisms = do
-    (rv, types) <- _getMechanismList functionListPtr slotId maxMechanisms
+  allocaArray maxMechanisms $ \array -> do
+    (rv, outArrayLen) <- getMechanismList' functionListPtr slotId array maxMechanisms
     if rv /= 0
-        then fail $ "failed to get list of mechanisms: " ++ (rvToStr rv)
-        else return $ map (fromIntegral) types
+      then fail $ "failed to get list of mechanisms: " ++ (rvToStr rv)
+      else do
+        mechsIds <- peekArray (fromIntegral outArrayLen) array
+        return $ map (fromIntegral) mechsIds
 
 
 -- | Obtains information about a particular mechanism possibly supported by a token

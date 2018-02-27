@@ -1,3 +1,4 @@
+-- | This module contains lazy versions of functions.
 module System.Crypto.Pkcs11.Lazy (
   encrypt
 ) where

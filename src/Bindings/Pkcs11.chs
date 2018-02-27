@@ -1,4 +1,6 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
+-- | This module contains low-level binding for PKCS#11 C interface.  Module is not intended to be used directly by
+-- user applications.
 module Bindings.Pkcs11 where
 import Foreign
 import Foreign.Marshal.Utils
@@ -23,8 +25,6 @@ import Data.List
 
 _serialSession = {#const CKF_SERIAL_SESSION#} :: Int
 _rwSession = {#const CKF_RW_SESSION#} :: Int
-
-rsaPkcsKeyPairGen = {#const CKM_RSA_PKCS_KEY_PAIR_GEN#} :: Int
 
 -- | Used to reference an object
 type ObjectHandle = {#type CK_OBJECT_HANDLE#}
@@ -246,11 +246,13 @@ instance Storable SessionInfo where
 
 {#fun unsafe CK_FUNCTION_LIST.C_Initialize as initialize
  {`FunctionListPtr',
-  alloca- `()' } -> `Rv' fromIntegral#}
+  alloca- `()' } -> `Rv'
+#}
 
 {#fun unsafe CK_FUNCTION_LIST.C_GetInfo as getInfo'
  {`FunctionListPtr',
-  alloca- `LibraryInfo' peek* } -> `Rv' fromIntegral#}
+  alloca- `LibraryInfo' peek* } -> `Rv'
+#}
 
 {#fun unsafe CK_FUNCTION_LIST.C_GetSlotList as getSlotList'
  {`FunctionListPtr',
@@ -258,7 +260,6 @@ instance Storable SessionInfo where
   castPtr `Ptr SlotId',
   `CULong' peek*} -> `Rv'
 #}
-
 
 
 initToken' :: FunctionListPtr -> SlotId -> BU8.ByteString -> String -> IO (Rv)
@@ -289,21 +290,21 @@ setPin' funcListPtr sessHandle oldPin newPin = do
 {#fun unsafe CK_FUNCTION_LIST.C_GetSessionInfo as getSessionInfo'
   {`FunctionListPtr',
    `SessionHandle',
-   alloca- `SessionInfo' peek* } -> `Rv' fromIntegral
+   alloca- `SessionInfo' peek* } -> `Rv'
 #}
 
 
 {#fun unsafe CK_FUNCTION_LIST.C_GetSlotInfo as getSlotInfo'
   {`FunctionListPtr',
    `SlotId',
-   alloca- `SlotInfo' peek* } -> `Rv' fromIntegral
+   alloca- `SlotInfo' peek* } -> `Rv'
 #}
 
 
 {#fun unsafe CK_FUNCTION_LIST.C_GetTokenInfo as getTokenInfo'
   {`FunctionListPtr',
    `SlotId',
-   alloca- `TokenInfo' peek* } -> `Rv' fromIntegral
+   alloca- `TokenInfo' peek* } -> `Rv'
 #}
 
 
@@ -316,7 +317,8 @@ openSession' functionListPtr slotId flags =
 
 {#fun unsafe CK_FUNCTION_LIST.C_CloseSession as closeSession'
  {`FunctionListPtr',
-  `SessionHandle' } -> `Rv' fromIntegral#}
+  `SessionHandle' } -> `Rv'
+#}
 
 
 {#fun unsafe CK_FUNCTION_LIST.C_CloseAllSessions as closeAllSessions'
@@ -326,13 +328,15 @@ openSession' functionListPtr slotId flags =
 
 {#fun unsafe CK_FUNCTION_LIST.C_Finalize as finalize
  {`FunctionListPtr',
-  alloca- `()' } -> `Rv' fromIntegral#}
+  alloca- `()' } -> `Rv'
+#}
 
-
-findObjectsInit' functionListPtr session attribs = do
-    _withAttribs attribs $ \attribsPtr -> do
-        res <- {#call unsafe CK_FUNCTION_LIST.C_FindObjectsInit#} functionListPtr session attribsPtr (fromIntegral $ length attribs)
-        return (fromIntegral res)
+{#fun unsafe CK_FUNCTION_LIST.C_FindObjectsInit as findObjectsInit'
+ {`FunctionListPtr',
+  `SessionHandle',
+  `LlAttributePtr',
+  `CULong'} -> `Rv'
+#}
 
 
 findObjects' functionListPtr session maxObjects = do
@@ -347,7 +351,8 @@ findObjects' functionListPtr session maxObjects = do
 
 {#fun unsafe CK_FUNCTION_LIST.C_FindObjectsFinal as findObjectsFinal'
  {`FunctionListPtr',
-  `CULong' } -> `Rv' fromIntegral#}
+  `CULong' } -> `Rv'
+#}
 
 
 {#enum define UserType {CKU_USER as User, CKU_SO as SecurityOfficer, CKU_CONTEXT_SPECIFIC as ContextSpecific} deriving (Eq) #}
@@ -366,7 +371,8 @@ findObjects' functionListPtr session maxObjects = do
  {`FunctionListPtr',
   `SessionHandle',
   castPtr `Ptr CUChar',
-  `CULong' peek*} ->  `Rv'#}
+  `CULong' peek*} ->  `Rv'
+#}
 
 
 _login :: FunctionListPtr -> SessionHandle -> UserType -> BU8.ByteString -> IO (Rv)
@@ -379,24 +385,18 @@ _login functionListPtr session userType pin = do
 {#fun unsafe CK_FUNCTION_LIST.C_DestroyObject as destroyObject'
  {`FunctionListPtr',
   `SessionHandle',
-  `ObjectHandle'} ->  `Rv'#}
+  `ObjectHandle'} ->  `Rv'
+#}
 
 
-generateKey' :: FunctionListPtr -> SessionHandle -> Mech -> [Attribute] -> IO (Rv, ObjectHandle)
-generateKey' funcListPtr sessHandle mech attribs = do
-    alloca $ \keyHandlePtr -> do
-        with mech $ \mechPtr -> do
-            _withAttribs attribs $ \attribsPtr -> do
-                res <- {#call unsafe CK_FUNCTION_LIST.C_GenerateKey#} funcListPtr sessHandle mechPtr attribsPtr (fromIntegral $ length attribs) keyHandlePtr
-                keyHandle <- peek keyHandlePtr
-                return (fromIntegral res, fromIntegral keyHandle)
-
--- {#fun unsafe CK_FUNCTION_LIST.C_GenerateKey as generateKey'
---  {`FunctionListPtr',
---   `SessionHandle',
---   `MechType',
---   _withAttribs* `[Attribute]'&,
---   alloca- `ObjectHandle'} -> `Rv' fromIntegral#}
+{#fun unsafe CK_FUNCTION_LIST.C_GenerateKey as generateKey'
+ {`FunctionListPtr',
+  `SessionHandle',
+  with* `Mech',
+  `LlAttributePtr',
+  `CULong',
+  alloca- `ObjectHandle' peek*} -> `Rv'
+#}
 
 
 _generateKeyPair :: FunctionListPtr
@@ -417,23 +417,19 @@ _generateKeyPair functionListPtr session mech pubAttrs privAttrs = do
                         return (fromIntegral res, fromIntegral pubKeyHandle, fromIntegral privKeyHandle)
 
 
-
-_getMechanismList :: FunctionListPtr -> SlotId -> Int -> IO (Rv, [Int])
-_getMechanismList functionListPtr slotId maxMechanisms = do
-    alloca $ \arrayLenPtr -> do
-        poke arrayLenPtr (fromIntegral maxMechanisms)
-        allocaArray maxMechanisms $ \array -> do
-            res <- {#call unsafe CK_FUNCTION_LIST.C_GetMechanismList#} functionListPtr (fromIntegral slotId) array arrayLenPtr
-            arrayLen <- peek arrayLenPtr
-            objectHandles <- peekArray (fromIntegral arrayLen) array
-            return (fromIntegral res, map (fromIntegral) objectHandles)
+{#fun unsafe CK_FUNCTION_LIST.C_GetMechanismList as getMechanismList'
+  {`FunctionListPtr',
+   `SlotId',
+   castPtr `Ptr CUChar',
+   `CULong' peek*} -> `Rv'
+#}
 
 
 {#fun unsafe CK_FUNCTION_LIST.C_GetMechanismInfo as _getMechanismInfo
   {`FunctionListPtr',
    `SlotId',
    `Int',
-   alloca- `MechInfo' peek* } -> `Rv' fromIntegral
+   alloca- `MechInfo' peek* } -> `Rv'
 #}
 
 
