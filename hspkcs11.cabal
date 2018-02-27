@@ -24,6 +24,7 @@ library
     exposed-modules:
         System.Crypto.Pkcs11
         System.Crypto.Pkcs11.Lazy
+        Bindings.Pkcs11
     Default-language:  Haskell2010
 
 test-suite pkcs11-tests
