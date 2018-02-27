@@ -135,6 +135,7 @@ module System.Crypto.Pkcs11 (
 ) where
 import Bindings.Pkcs11
 import Control.Exception
+import Control.Monad
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as BU8
 import Data.Bits
@@ -159,21 +160,21 @@ simpleMech :: MechType -> Mech
 simpleMech mechType = Mech mechType nullPtr 0
 
 
-getFunctionList :: GetFunctionListFunPtr -> IO ((Rv), (FunctionListPtr))
+getFunctionList :: GetFunctionListFunPtr -> IO (Rv, FunctionListPtr)
 getFunctionList getFunctionListPtr =
   alloca $ \funcListPtrPtr -> do
-    res <- (getFunctionList'_ getFunctionListPtr) funcListPtrPtr
+    res <- getFunctionList'_ getFunctionListPtr funcListPtrPtr
     funcListPtr <- peek funcListPtrPtr
     return (fromIntegral res, funcListPtr)
 
 -- | Return number of slots in the system.
 getSlotNum :: Library -- ^ Library to be used for operation.
            -> Bool -- ^ If True will return only slots with tokens in them.
-           -> IO (CULong) -- ^ Number of slots.
+           -> IO CULong -- ^ Number of slots.
 getSlotNum (Library _ functionListPtr) active = do
     (rv, outNum) <- getSlotList' functionListPtr active nullPtr 0
     if rv /= 0
-        then fail $ "failed to get number of slots " ++ (rvToStr rv)
+        then fail $ "failed to get number of slots " ++ rvToStr rv
         else return outNum
 
 -- | Get a list of slot IDs in the system.  Can filter for slots with attached tokens.
@@ -185,40 +186,36 @@ getSlotList :: Library -- ^ Library to be used for operation.
             -> Bool -- ^ If True will return only slots with tokens in them.
             -> Int -- ^ Maximum number of slot IDs to be returned.
             -> IO [SlotId]
-getSlotList (Library _ functionListPtr) active num = do
+getSlotList (Library _ functionListPtr) active num =
     allocaArray num $ \array -> do
         (rv, outNum) <- getSlotList' functionListPtr active array (fromIntegral num)
         if rv /= 0
-            then fail $ "failed to get list of slots " ++ (rvToStr rv)
+            then fail $ "failed to get list of slots " ++ rvToStr rv
             else peekArray (fromIntegral outNum) array
 
 
 getSessionInfo (Session sessHandle funListPtr) = do
     (rv, sessInfo) <- getSessionInfo' funListPtr sessHandle
     if rv /= 0
-        then fail $ "failed to get session info: " ++ (rvToStr rv)
+        then fail $ "failed to get session info: " ++ rvToStr rv
         else return sessInfo
 
 
 closeAllSessions (Library _ funcListPtr) slotId = do
     rv <- closeAllSessions' funcListPtr slotId
-    if rv /= 0
-        then fail $ "failed to close sessions: " ++ (rvToStr rv)
-        else return ()
+    when (rv /= 0) $ fail $ "failed to close sessions: " ++ rvToStr rv
 
-getOperationState (Session sessHandle funcListPtr) maxSize = do
+getOperationState (Session sessHandle funcListPtr) maxSize =
     allocaBytes (fromIntegral maxSize) $ \bytesPtr -> do
         (rv, resSize) <- getOperationState' funcListPtr sessHandle bytesPtr maxSize
         if rv /= 0
-            then fail $ "failed to get operation state: " ++ (rvToStr rv)
+            then fail $ "failed to get operation state: " ++ rvToStr rv
             else BS.packCStringLen (castPtr bytesPtr, fromIntegral resSize)
 
 -- | Deletes an object from token or session.
 destroyObject (Session sessHandle funcListPtr) objectHandle = do
     rv <- destroyObject' funcListPtr sessHandle objectHandle
-    if rv /= 0
-        then fail $ "failed to destroy object: " ++ (rvToStr rv)
-        else return ()
+    when (rv /= 0) $ fail $ "failed to destroy object: " ++ rvToStr rv
 
 
 -- | Generates a symmetric key using provided mechanism and applies provided attributes to resulting key object.
@@ -233,11 +230,11 @@ destroyObject (Session sessHandle funcListPtr) objectHandle = do
 --
 -- > dhParamsHandle <- generateKey sess (simpleMech DhPkcsParameterGen) [PrimeBits 1028]
 generateKey :: Session -> Mech -> [Attribute] -> IO ObjectHandle
-generateKey (Session sessHandle funcListPtr) mech attribs = do
+generateKey (Session sessHandle funcListPtr) mech attribs =
   _withAttribs attribs $ \attrPtr -> do
     (rv, keyHandle) <- generateKey' funcListPtr sessHandle mech attrPtr (fromIntegral $ length attribs)
     if rv /= 0
-        then fail $ "failed to generate key: " ++ (rvToStr rv)
+        then fail $ "failed to generate key: " ++ rvToStr rv
         else return keyHandle
 
 
@@ -254,11 +251,11 @@ loadLibrary libraryPath = do
     getFunctionListFunPtr <- dlsym lib "C_GetFunctionList"
     (rv, functionListPtr) <- getFunctionList getFunctionListFunPtr
     if rv /= 0
-        then fail $ "failed to get list of functions " ++ (rvToStr rv)
+        then fail $ "failed to get list of functions " ++ rvToStr rv
         else do
             rv <- initialize functionListPtr
             if rv /= 0
-                then fail $ "failed to initialize library " ++ (rvToStr rv)
+                then fail $ "failed to initialize library " ++ rvToStr rv
                 else return Library { libraryHandle = lib, functionListPtr = functionListPtr }
 
 
@@ -273,7 +270,7 @@ getInfo :: Library -> IO LibraryInfo
 getInfo (Library _ functionListPtr) = do
     (rv, info) <- getInfo' functionListPtr
     if rv /= 0
-        then fail $ "failed to get library information " ++ (rvToStr rv)
+        then fail $ "failed to get library information " ++ rvToStr rv
         else return info
 
 
@@ -281,16 +278,14 @@ _openSessionEx :: Library -> SlotId -> Int -> IO Session
 _openSessionEx (Library _ functionListPtr) slotId flags = do
     (rv, sessionHandle) <- openSession' functionListPtr slotId flags
     if rv /= 0
-        then fail $ "failed to open slot: " ++ (rvToStr rv)
+        then fail $ "failed to open slot: " ++ rvToStr rv
         else return $ Session sessionHandle functionListPtr
 
 
 _closeSessionEx :: Session -> IO ()
 _closeSessionEx (Session sessionHandle functionListPtr) = do
-    rv <- closeSession' functionListPtr sessionHandle
-    if rv /= 0
-        then fail $ "failed to close slot: " ++ (rvToStr rv)
-        else return ()
+  rv <- closeSession' functionListPtr sessionHandle
+  when (rv /= 0) $ fail $ "failed to close slot: " ++ rvToStr rv
 
 
 -- | Opens a read-only or read-write session with a token in a given slot and then closes it after callback function is finished.
@@ -303,34 +298,30 @@ withSession lib slotId writable f = do
     let flags = if writable then _rwSession else 0
     bracket
         (_openSessionEx lib slotId (flags .|. _serialSession))
-        (_closeSessionEx)
-        (f)
+        _closeSessionEx
+        f
 
 
 
 _findObjectsInit :: Session -> [Attribute] -> IO ()
-_findObjectsInit (Session sessionHandle functionListPtr) attribs = do
+_findObjectsInit (Session sessionHandle functionListPtr) attribs =
   _withAttribs attribs $ \attribsPtr -> do
     rv <- findObjectsInit' functionListPtr sessionHandle attribsPtr (fromIntegral $ length attribs)
-    if rv /= 0
-        then fail $ "failed to initialize search: " ++ (rvToStr rv)
-        else return ()
+    when (rv /= 0) $ fail $ "failed to initialize search: " ++ rvToStr rv
 
 
 _findObjectsEx :: Session -> IO [ObjectHandle]
 _findObjectsEx (Session sessionHandle functionListPtr) = do
     (rv, objectsHandles) <- findObjects' functionListPtr sessionHandle 10
     if rv /= 0
-        then fail $ "failed to execute search: " ++ (rvToStr rv)
+        then fail $ "failed to execute search: " ++ rvToStr rv
         else return objectsHandles
 
 
 _findObjectsFinalEx :: Session -> IO ()
 _findObjectsFinalEx (Session sessionHandle functionListPtr) = do
-    rv <- findObjectsFinal' functionListPtr sessionHandle
-    if rv /= 0
-        then fail $ "failed to finalize search: " ++ (rvToStr rv)
-        else return ()
+  rv <- findObjectsFinal' functionListPtr sessionHandle
+  when (rv /= 0) $ fail $ "failed to finalize search: " ++ rvToStr rv
 
 
 -- | Searches current session for objects matching provided attributes list, returns a list of matching object handles
@@ -355,7 +346,7 @@ generateKeyPair :: Session -- ^ session in which to generate key
 generateKeyPair (Session sessionHandle functionListPtr) mech pubKeyAttrs privKeyAttrs = do
     (rv, pubKeyHandle, privKeyHandle) <- _generateKeyPair functionListPtr sessionHandle mech pubKeyAttrs privKeyAttrs
     if rv /= 0
-        then fail $ "failed to generate key pair: " ++ (rvToStr rv)
+        then fail $ "failed to generate key pair: " ++ rvToStr rv
         else return (pubKeyHandle, privKeyHandle)
 -- | Initialize a token in a given slot.  All objects created by user on the token are destroyed.
 initToken :: Library -- ^ PKCS#11 library
@@ -364,10 +355,8 @@ initToken :: Library -- ^ PKCS#11 library
           -> String  -- ^ new label for the token
           -> IO ()
 initToken (Library _ funcListPtr) slotId pin label = do
-    rv <- initToken' funcListPtr slotId pin label
-    if rv /= 0
-        then fail $ "failed to initialize token " ++ (rvToStr rv)
-        else return ()
+  rv <- initToken' funcListPtr slotId pin label
+  when (rv /= 0) $ fail $ "failed to initialize token " ++ rvToStr rv
 
 
 -- | Obtains information about a particular slot in the system
@@ -375,10 +364,10 @@ initToken (Library _ funcListPtr) slotId pin label = do
 -- > slotInfo <- getSlotInfo lib slotId
 getSlotInfo :: Library -> SlotId -> IO SlotInfo
 getSlotInfo (Library _ functionListPtr) slotId = do
-    (rv, slotInfo) <- getSlotInfo' functionListPtr slotId
-    if rv /= 0
-        then fail $ "failed to get slot information " ++ (rvToStr rv)
-        else return slotInfo
+  (rv, slotInfo) <- getSlotInfo' functionListPtr slotId
+  if rv /= 0
+    then fail $ "failed to get slot information " ++ rvToStr rv
+    else return slotInfo
 
 
 -- | Obtains information about a particular token in the system
@@ -386,46 +375,47 @@ getSlotInfo (Library _ functionListPtr) slotId = do
 -- > tokenInfo <- getTokenInfo lib slotId
 getTokenInfo :: Library -> SlotId -> IO TokenInfo
 getTokenInfo (Library _ functionListPtr) slotId = do
-    (rv, slotInfo) <- getTokenInfo' functionListPtr slotId
-    if rv /= 0
-        then fail $ "failed to get token information " ++ (rvToStr rv)
-        else return slotInfo
+  (rv, slotInfo) <- getTokenInfo' functionListPtr slotId
+  if rv /= 0
+    then fail $ "failed to get token information " ++ rvToStr rv
+    else return slotInfo
 
 -- | Derives a key from a base key using provided mechanism and applies provided attributes to a resulting key.
 -- Can be used to derive symmetric key using Diffie-Hellman key exchange.
-deriveKey (Session sessHandle funcListPtr) mech baseKeyHandle attribs = do
-    _withAttribs attribs $ \attribsPtr -> do
-        (rv, createdHandle) <- deriveKey' funcListPtr sessHandle mech baseKeyHandle attribsPtr (fromIntegral $ length attribs)
-        if rv /= 0
-            then fail $ "failed to derive key: " ++ (rvToStr rv)
-            else return createdHandle
+deriveKey (Session sessHandle funcListPtr) mech baseKeyHandle attribs =
+  _withAttribs attribs $ \attribsPtr -> do
+    (rv, createdHandle) <-
+      deriveKey' funcListPtr sessHandle mech baseKeyHandle attribsPtr (fromIntegral $ length attribs)
+    if rv /= 0
+      then fail $ "failed to derive key: " ++ rvToStr rv
+      else return createdHandle
 
 -- | Creates an object from given list of attributes and returns a reference to created object.
-createObject (Session sessHandle funcListPtr) attribs = do
-    _withAttribs attribs $ \attribsPtr -> do
-        (rv, createdHandle) <- createObject' funcListPtr sessHandle attribsPtr (fromIntegral $ length attribs)
-        if rv /= 0
-            then fail $ "failed to create object: " ++ (rvToStr rv)
-            else return createdHandle
+createObject (Session sessHandle funcListPtr) attribs =
+  _withAttribs attribs $ \attribsPtr -> do
+    (rv, createdHandle) <- createObject' funcListPtr sessHandle attribsPtr (fromIntegral $ length attribs)
+    if rv /= 0
+      then fail $ "failed to create object: " ++ rvToStr rv
+      else return createdHandle
 
 -- | Makes a copy of an object and changes attributes of copied object, returns a reference to new object.
-copyObject (Session sessHandle funcListPtr) objHandle attribs = do
-    _withAttribs attribs $ \attribsPtr -> do
-        (rv, createdHandle) <- copyObject' funcListPtr sessHandle objHandle attribsPtr (fromIntegral $ length attribs)
-        if rv /= 0
-            then fail $ "failed to copy object: " ++ (rvToStr rv)
-            else return createdHandle
+copyObject (Session sessHandle funcListPtr) objHandle attribs =
+  _withAttribs attribs $ \attribsPtr -> do
+    (rv, createdHandle) <- copyObject' funcListPtr sessHandle objHandle attribsPtr (fromIntegral $ length attribs)
+    if rv /= 0
+      then fail $ "failed to copy object: " ++ rvToStr rv
+      else return createdHandle
 
 -- | Returns an approximate amount of space occupied by an object in bytes.
 getObjectSize (Session sessHandle funcListPtr) objHandle = do
-    (rv, objSize) <- getObjectSize' funcListPtr sessHandle objHandle
-    if rv /= 0
-        then fail $ "failed to get object size: " ++ (rvToStr rv)
-        else return objSize
+  (rv, objSize) <- getObjectSize' funcListPtr sessHandle objHandle
+  if rv /= 0
+    then fail $ "failed to get object size: " ++ rvToStr rv
+    else return objSize
 
 
 getBoolAttr :: Session -> ObjectHandle -> AttributeType -> IO Bool
-getBoolAttr (Session sessHandle funcListPtr) objHandle attrType = do
+getBoolAttr (Session sessHandle funcListPtr) objHandle attrType =
     alloca $ \valuePtr -> do
         _getAttr funcListPtr sessHandle objHandle attrType (valuePtr :: Ptr CK_BBOOL)
         val <- peek valuePtr
@@ -468,22 +458,18 @@ getEcPoint (Session sessHandle funcListPtr) objHandle = do
     return bs
 
 -- | Modifies attributes of an object.
-setAttributes (Session sessHandle funcListPtr) objHandle attribs = do
-    _withAttribs attribs $ \attribsPtr -> do
-        rv <- setAttributeValue' funcListPtr sessHandle objHandle attribsPtr (fromIntegral $ length attribs)
-        if rv /= 0
-            then fail $ "failed to set attributes: " ++ (rvToStr rv)
-            else return ()
+setAttributes (Session sessHandle funcListPtr) objHandle attribs =
+  _withAttribs attribs $ \attribsPtr -> do
+    rv <- setAttributeValue' funcListPtr sessHandle objHandle attribsPtr (fromIntegral $ length attribs)
+    when (rv /= 0) $ fail $ "failed to set attributes: " ++ rvToStr rv
 
 
 -- | Initializes normal user's PIN.  Session should be logged in by SO user in other words it should be in
 -- 'RWSOFunctions' state.
 initPin :: Session -> BU8.ByteString -> IO ()
 initPin (Session sessHandle funcListPtr) pin = do
-    rv <- initPin' funcListPtr sessHandle pin
-    if rv /= 0
-        then fail $ "initPin failed: " ++ (rvToStr rv)
-        else return ()
+  rv <- initPin' funcListPtr sessHandle pin
+  when (rv /= 0) $ fail $ "initPin failed: " ++ rvToStr rv
 
 
 -- | Changes PIN of a currently logged in user.
@@ -492,10 +478,8 @@ setPin :: Session  -- ^ session to act on
        -> BU8.ByteString -- ^ new PIN
        -> IO ()
 setPin (Session sessHandle funcListPtr) oldPin newPin = do
-    rv <- setPin' funcListPtr sessHandle oldPin newPin
-    if rv /= 0
-        then fail $ "setPin failed: " ++ (rvToStr rv)
-        else return ()
+  rv <- setPin' funcListPtr sessHandle oldPin newPin
+  when (rv /= 0) $ fail $ "setPin failed: " ++ rvToStr rv
 
 
 -- | Logs a user into a token.
@@ -504,28 +488,22 @@ login :: Session -- ^ session to act on
       -> BU8.ByteString -- ^ user's PIN
       -> IO ()
 login (Session sessionHandle functionListPtr) userType pin = do
-    rv <- _login functionListPtr sessionHandle userType pin
-    if rv /= 0
-        then fail $ "login failed: " ++ (rvToStr rv)
-        else return ()
+  rv <- _login functionListPtr sessionHandle userType pin
+  when (rv /= 0) $ fail $ "login failed: " ++ rvToStr rv
 
 
 -- | Logs a user out from a token.
 logout :: Session -> IO ()
 logout (Session sessionHandle functionListPtr) = do
-    rv <- logout' functionListPtr sessionHandle
-    if rv /= 0
-        then fail $ "logout failed: " ++ (rvToStr rv)
-        else return ()
+  rv <- logout' functionListPtr sessionHandle
+  when (rv /= 0) $ fail $ "logout failed: " ++ rvToStr rv
 
 
 -- | Initialize a multi-part decryption operation using provided mechanism and key.
 decryptInit :: Mech -> Session -> ObjectHandle -> IO ()
 decryptInit mech (Session sessionHandle functionListPtr) obj = do
-    rv <- decryptInit' functionListPtr sessionHandle mech obj
-    if rv /= 0
-        then fail $ "failed to initiate decryption: " ++ (rvToStr rv)
-        else return ()
+  rv <- decryptInit' functionListPtr sessionHandle mech obj
+  when (rv /= 0) $ fail $ "failed to initiate decryption: " ++ rvToStr rv
 
 
 -- | Decrypt data using provided mechanism and key handle.
@@ -541,11 +519,11 @@ decrypt :: Mech -- ^ Mechanism used for decryption.
         -> IO BS.ByteString -- ^ Decrypted data
 decrypt mech (Session sessionHandle functionListPtr) keyHandle encData outLen = do
     decryptInit mech (Session sessionHandle functionListPtr) keyHandle
-    unsafeUseAsCStringLen encData $ \(encDataPtr, encDataLen) -> do
+    unsafeUseAsCStringLen encData $ \(encDataPtr, encDataLen) ->
         allocaBytes (fromIntegral outLen) $ \outDataPtr -> do
             (rv, outDataLen) <- decrypt' functionListPtr sessionHandle (castPtr encDataPtr) (fromIntegral encDataLen) outDataPtr outLen
             if rv /= 0
-                then fail $ "failed to decrypt: " ++ (rvToStr rv)
+                then fail $ "failed to decrypt: " ++ rvToStr rv
                 else BS.packCStringLen (castPtr outDataPtr, fromIntegral outDataLen)
 
 -- | Initialize multi-part encryption operation.
@@ -554,10 +532,8 @@ encryptInit :: Mech -- ^ Mechanism to use for encryption.
                -> ObjectHandle -- ^ Key handle.
                -> IO ()
 encryptInit mech (Session sessionHandle functionListPtr) obj = do
-    rv <- encryptInit' functionListPtr sessionHandle mech obj
-    if rv /= 0
-        then fail $ "failed to initiate decryption: " ++ (rvToStr rv)
-        else return ()
+  rv <- encryptInit' functionListPtr sessionHandle mech obj
+  when (rv /= 0) $ fail $ "failed to initiate decryption: " ++ rvToStr rv
 
 -- | Encrypt data using provided mechanism and key handle.
 encrypt :: Mech -- ^ Mechanism to use for encryption.
@@ -568,34 +544,32 @@ encrypt :: Mech -- ^ Mechanism to use for encryption.
         -> IO BS.ByteString -- ^ Encrypted data.
 encrypt mech (Session sessionHandle functionListPtr) keyHandle encData outLen = do
     encryptInit mech (Session sessionHandle functionListPtr) keyHandle
-    unsafeUseAsCStringLen encData $ \(encDataPtr, encDataLen) -> do
+    unsafeUseAsCStringLen encData $ \(encDataPtr, encDataLen) ->
       allocaBytes (fromIntegral outLen) $ \outDataPtr -> do
           (rv, outDataLen) <- encrypt' functionListPtr sessionHandle (castPtr encDataPtr) (fromIntegral encDataLen) outDataPtr outLen
           if rv /= 0
-              then fail $ "failed to decrypt: " ++ (rvToStr rv)
+              then fail $ "failed to decrypt: " ++ rvToStr rv
               else BS.packCStringLen (castPtr outDataPtr, fromIntegral outDataLen)
 
 
-encryptUpdate (Session sessHandle funcListPtr) inData outLen = do
+encryptUpdate (Session sessHandle funcListPtr) inData outLen =
     allocaBytes (fromIntegral outLen) $ \outPtr -> do
         (rv, outResLen) <- encryptUpdate' funcListPtr sessHandle inData (fromIntegral $ BS.length inData) outPtr outLen
         if rv /= 0
-            then fail $ "failed to encrypt part: " ++ (rvToStr rv)
+            then fail $ "failed to encrypt part: " ++ rvToStr rv
             else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
 
-encryptFinal (Session sessHandle funcListPtr) outLen = do
+encryptFinal (Session sessHandle funcListPtr) outLen =
     allocaBytes (fromIntegral outLen) $ \outPtr -> do
         (rv, outResLen) <- encryptFinal' funcListPtr sessHandle outPtr outLen
         if rv /= 0
-            then fail $ "failed to complete encryption: " ++ (rvToStr rv)
+            then fail $ "failed to complete encryption: " ++ rvToStr rv
             else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
 
 digestInit :: Mech -> Session -> IO ()
 digestInit mech (Session sessHandle funcListPtr) = do
-    rv <- digestInit' funcListPtr sessHandle mech
-    if rv /= 0
-        then fail $ "failed to initialize digest operation: " ++ (rvToStr rv)
-        else return ()
+  rv <- digestInit' funcListPtr sessHandle mech
+  when (rv /= 0) $ fail $ "failed to initialize digest operation: " ++ rvToStr rv
 
 -- | Calculates digest aka hash of a data using provided mechanism.
 --
@@ -607,22 +581,20 @@ digest :: Mech -- ^ Digest mechanism.
        -> Session -- ^ Session to be used for digesting.
        -> BS.ByteString -- ^ Data to be digested.
        -> CULong -- ^ Maximum number of bytes to be returned.
-       -> IO (BS.ByteString) -- ^ Resulting digest.
+       -> IO BS.ByteString -- ^ Resulting digest.
 digest mech (Session sessHandle funcListPtr) digestData outLen = do
-    digestInit mech (Session sessHandle funcListPtr)
-    allocaBytes (fromIntegral outLen) $ \outPtr -> do
-        (rv, outResLen) <- digest' funcListPtr sessHandle digestData (fromIntegral $ BS.length digestData) outPtr outLen
-        if rv /= 0
-            then fail $ "failed to digest: " ++ (rvToStr rv)
-            else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
+  digestInit mech (Session sessHandle funcListPtr)
+  allocaBytes (fromIntegral outLen) $ \outPtr -> do
+    (rv, outResLen) <- digest' funcListPtr sessHandle digestData (fromIntegral $ BS.length digestData) outPtr outLen
+    if rv /= 0
+      then fail $ "failed to digest: " ++ rvToStr rv
+      else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
 
 
 signInit :: Mech -> Session -> ObjectHandle -> IO ()
 signInit mech (Session sessHandle funcListPtr) objHandle = do
-    rv <- signInit' funcListPtr sessHandle mech objHandle
-    if rv /= 0
-        then fail $ "failed to initialize signing operation: " ++ (rvToStr rv)
-        else return ()
+  rv <- signInit' funcListPtr sessHandle mech objHandle
+  when (rv /= 0) $ fail $ "failed to initialize signing operation: " ++ rvToStr rv
 
 -- | Signs data using provided mechanism and key.
 --
@@ -634,21 +606,19 @@ sign :: Mech -- ^ Mechanism to use for signing.
      -> ObjectHandle -- ^ Key handle.
      -> BS.ByteString -- ^ Data to be signed.
      -> CULong -- ^ Maximum number of bytes to be returned.
-     -> IO (BS.ByteString) -- ^ Signature.
+     -> IO BS.ByteString -- ^ Signature.
 sign mech (Session sessHandle funcListPtr) key signData outLen = do
-    signInit mech (Session sessHandle funcListPtr) key
-    allocaBytes (fromIntegral outLen) $ \outPtr -> do
-        (rv, outResLen) <- sign' funcListPtr sessHandle signData (fromIntegral $ BS.length signData) outPtr outLen
-        if rv /= 0
-            then fail $ "failed to sign: " ++ (rvToStr rv)
-            else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
+  signInit mech (Session sessHandle funcListPtr) key
+  allocaBytes (fromIntegral outLen) $ \outPtr -> do
+    (rv, outResLen) <- sign' funcListPtr sessHandle signData (fromIntegral $ BS.length signData) outPtr outLen
+    if rv /= 0
+      then fail $ "failed to sign: " ++ rvToStr rv
+      else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
 
 signRecoverInit :: Mech -> Session -> ObjectHandle -> IO ()
 signRecoverInit mech (Session sessHandle funcListPtr) objHandle = do
-    rv <- signRecoverInit' funcListPtr sessHandle mech objHandle
-    if rv /= 0
-        then fail $ "failed to initialize signing with recovery operation: " ++ (rvToStr rv)
-        else return ()
+  rv <- signRecoverInit' funcListPtr sessHandle mech objHandle
+  when (rv /= 0) $ fail $ "failed to initialize signing with recovery operation: " ++ rvToStr rv
 
 signRecover (Session sessHandle funcListPtr) signData outLen =
     allocaBytes (fromIntegral outLen) $ \outPtr -> do
@@ -659,10 +629,8 @@ signRecover (Session sessHandle funcListPtr) signData outLen =
 
 verifyInit :: Session -> Mech -> ObjectHandle -> IO ()
 verifyInit (Session sessHandle funcListPtr) mech objHandle = do
-    rv <- verifyInit' funcListPtr sessHandle mech objHandle
-    if rv /= 0
-        then fail $ "failed to initialize verify operation: " ++ (rvToStr rv)
-        else return ()
+  rv <- verifyInit' funcListPtr sessHandle mech objHandle
+  when (rv /= 0) $ fail $ "failed to initialize verify operation: " ++ rvToStr rv
 
 -- | Verifies signature using provided mechanism and key.
 --
@@ -675,7 +643,7 @@ verify :: Mech -- ^ Mechanism to be used for signature validation.
        -> ObjectHandle -- ^ Key handle.
        -> BS.ByteString -- ^ Signed data.
        -> BS.ByteString -- ^ Signature.
-       -> IO (Bool) -- ^ True is signature is valid, False otherwise.
+       -> IO Bool -- ^ True is signature is valid, False otherwise.
 verify mech (Session sessHandle funcListPtr) keyHandle signData signatureData = do
     verifyInit (Session sessHandle funcListPtr) mech keyHandle
     rv <- verify' funcListPtr sessHandle signData (fromIntegral $ BS.length signData) signatureData (fromIntegral $ BS.length signatureData)
@@ -725,39 +693,37 @@ unwrapKey mech (Session sessionHandle functionListPtr) key wrappedKey template =
 
 -- | Mixes provided seed data with token's seed
 seedRandom (Session sessHandle funcListPtr) seedData = do
-    rv <- seedRandom' funcListPtr sessHandle seedData (fromIntegral $ BS.length seedData)
-    if rv /= 0
-        then fail $ "failed to seed random: " ++ rvToStr rv
-        else return ()
+  rv <- seedRandom' funcListPtr sessHandle seedData (fromIntegral $ BS.length seedData)
+  when (rv /= 0) $ fail $ "failed to seed random: " ++ rvToStr rv
 
 -- | Generates random data using token's RNG.
 generateRandom :: Session -- ^ Session to work on.
                -> CULong -- ^ Number of bytes to generate.
                -> IO BS.ByteString -- ^ Generated random bytes.
-generateRandom (Session sessHandle funcListPtr) randLen = do
+generateRandom (Session sessHandle funcListPtr) randLen =
     allocaBytes (fromIntegral randLen) $ \randPtr -> do
         rv <- generateRandom' funcListPtr sessHandle randPtr randLen
         if rv /= 0
-            then fail $ "failed to generate random data: " ++ (rvToStr rv)
+            then fail $ "failed to generate random data: " ++ rvToStr rv
             else BS.packCStringLen (castPtr randPtr, fromIntegral randLen)
 
 
 -- | Obtains a list of mechanism types supported by a token
 getMechanismList :: Library -> SlotId -> Int -> IO [Int]
-getMechanismList (Library _ functionListPtr) slotId maxMechanisms = do
+getMechanismList (Library _ functionListPtr) slotId maxMechanisms =
   allocaArray maxMechanisms $ \array -> do
     (rv, outArrayLen) <- getMechanismList' functionListPtr slotId array (fromIntegral maxMechanisms)
     if rv /= 0
-      then fail $ "failed to get list of mechanisms: " ++ (rvToStr rv)
+      then fail $ "failed to get list of mechanisms: " ++ rvToStr rv
       else do
         mechsIds <- peekArray (fromIntegral outArrayLen) array
-        return $ map (fromIntegral) mechsIds
+        return $ map fromIntegral mechsIds
 
 
 -- | Obtains information about a particular mechanism possibly supported by a token
 getMechanismInfo :: Library -> SlotId -> MechType -> IO MechInfo
 getMechanismInfo (Library _ functionListPtr) slotId mechId = do
-    (rv, types) <- _getMechanismInfo functionListPtr slotId (fromEnum mechId)
-    if rv /= 0
-        then fail $ "failed to get mechanism information: " ++ (rvToStr rv)
-        else return types
+  (rv, types) <- _getMechanismInfo functionListPtr slotId (fromEnum mechId)
+  if rv /= 0
+    then fail $ "failed to get mechanism information: " ++ rvToStr rv
+    else return types
