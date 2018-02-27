@@ -637,10 +637,9 @@ verify mech (Session sessHandle funcListPtr) keyHandle signData signatureData = 
       (fromIntegral $ BS.length signData)
       signatureData
       (fromIntegral $ BS.length signatureData)
-  case rv of
-    0 -> return True
-    errSignatureInvalid -> return False
-    _ -> fail $ "failed to verify: " ++ rvToStr rv
+  if rv == 0 then return True
+  else if rv == fromIntegral errSignatureInvalid then return False
+  else fail $ "failed to verify: " ++ rvToStr rv
 
 -- | Wrap a key using provided wrapping key and return opaque byte array representing wrapped key.  This byte array
 -- can be stored in user application and can be used later to recreate wrapped key using 'unwrapKey' function.
