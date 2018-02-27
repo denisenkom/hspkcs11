@@ -534,11 +534,13 @@ encrypt mech (Session sessionHandle functionListPtr) keyHandle encData outLen = 
         else BS.packCStringLen (castPtr outDataPtr, fromIntegral outDataLen)
 
 encryptUpdate (Session sessHandle funcListPtr) inData outLen =
-  allocaBytes (fromIntegral outLen) $ \outPtr -> do
-    (rv, outResLen) <- encryptUpdate' funcListPtr sessHandle inData (fromIntegral $ BS.length inData) outPtr outLen
-    if rv /= 0
-      then fail $ "failed to encrypt part: " ++ rvToStr rv
-      else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
+  unsafeUseAsCStringLen inData $ \(inDataPtr, inDataLen) ->
+    allocaBytes (fromIntegral outLen) $ \outPtr -> do
+      (rv, outResLen) <-
+        encryptUpdate' funcListPtr sessHandle (castPtr inDataPtr) (fromIntegral inDataLen) outPtr outLen
+      if rv /= 0
+        then fail $ "failed to encrypt part: " ++ rvToStr rv
+        else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
 
 encryptFinal (Session sessHandle funcListPtr) outLen =
   allocaBytes (fromIntegral outLen) $ \outPtr -> do
@@ -566,11 +568,13 @@ digest ::
   -> IO BS.ByteString -- ^ Resulting digest.
 digest mech (Session sessHandle funcListPtr) digestData outLen = do
   digestInit mech (Session sessHandle funcListPtr)
-  allocaBytes (fromIntegral outLen) $ \outPtr -> do
-    (rv, outResLen) <- digest' funcListPtr sessHandle digestData (fromIntegral $ BS.length digestData) outPtr outLen
-    if rv /= 0
-      then fail $ "failed to digest: " ++ rvToStr rv
-      else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
+  unsafeUseAsCStringLen digestData $ \(digestDataPtr, digestDataLen) ->
+    allocaBytes (fromIntegral outLen) $ \outPtr -> do
+      (rv, outResLen) <-
+        digest' funcListPtr sessHandle (castPtr digestDataPtr) (fromIntegral digestDataLen) outPtr outLen
+      if rv /= 0
+        then fail $ "failed to digest: " ++ rvToStr rv
+        else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
 
 signInit :: Mech -> Session -> ObjectHandle -> IO ()
 signInit mech (Session sessHandle funcListPtr) objHandle = do
@@ -591,11 +595,12 @@ sign ::
   -> IO BS.ByteString -- ^ Signature.
 sign mech (Session sessHandle funcListPtr) key signData outLen = do
   signInit mech (Session sessHandle funcListPtr) key
-  allocaBytes (fromIntegral outLen) $ \outPtr -> do
-    (rv, outResLen) <- sign' funcListPtr sessHandle signData (fromIntegral $ BS.length signData) outPtr outLen
-    if rv /= 0
-      then fail $ "failed to sign: " ++ rvToStr rv
-      else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
+  unsafeUseAsCStringLen signData $ \(signDataPtr, signDataLen) ->
+    allocaBytes (fromIntegral outLen) $ \outPtr -> do
+      (rv, outResLen) <- sign' funcListPtr sessHandle (castPtr signDataPtr) (fromIntegral signDataLen) outPtr outLen
+      if rv /= 0
+        then fail $ "failed to sign: " ++ rvToStr rv
+        else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
 
 signRecoverInit :: Mech -> Session -> ObjectHandle -> IO ()
 signRecoverInit mech (Session sessHandle funcListPtr) objHandle = do
@@ -603,11 +608,13 @@ signRecoverInit mech (Session sessHandle funcListPtr) objHandle = do
   when (rv /= 0) $ fail $ "failed to initialize signing with recovery operation: " ++ rvToStr rv
 
 signRecover (Session sessHandle funcListPtr) signData outLen =
-  allocaBytes (fromIntegral outLen) $ \outPtr -> do
-    (rv, outResLen) <- signRecover' funcListPtr sessHandle signData (fromIntegral $ BS.length signData) outPtr outLen
-    if rv /= 0
-      then fail $ "failed to sign with recovery: " ++ rvToStr rv
-      else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
+  unsafeUseAsCStringLen signData $ \(signDataPtr, signDataLen) ->
+    allocaBytes (fromIntegral outLen) $ \outPtr -> do
+      (rv, outResLen) <-
+        signRecover' funcListPtr sessHandle (castPtr signDataPtr) (fromIntegral signDataLen) outPtr outLen
+      if rv /= 0
+        then fail $ "failed to sign with recovery: " ++ rvToStr rv
+        else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
 
 verifyInit :: Session -> Mech -> ObjectHandle -> IO ()
 verifyInit (Session sessHandle funcListPtr) mech objHandle = do
@@ -629,17 +636,21 @@ verify ::
   -> IO Bool -- ^ True is signature is valid, False otherwise.
 verify mech (Session sessHandle funcListPtr) keyHandle signData signatureData = do
   verifyInit (Session sessHandle funcListPtr) mech keyHandle
-  rv <-
-    verify'
-      funcListPtr
-      sessHandle
-      signData
-      (fromIntegral $ BS.length signData)
-      signatureData
-      (fromIntegral $ BS.length signatureData)
-  if rv == 0 then return True
-  else if rv == fromIntegral errSignatureInvalid then return False
-  else fail $ "failed to verify: " ++ rvToStr rv
+  unsafeUseAsCStringLen signData $ \(signDataPtr, signDataLen) ->
+    unsafeUseAsCStringLen signatureData $ \(signatureDataPtr, signatureDataLen) -> do
+      rv <-
+        verify'
+          funcListPtr
+          sessHandle
+          (castPtr signDataPtr)
+          (fromIntegral signDataLen)
+          (castPtr signatureDataPtr)
+          (fromIntegral signatureDataLen)
+      if rv == 0
+        then return True
+        else if rv == fromIntegral errSignatureInvalid
+               then return False
+               else fail $ "failed to verify: " ++ rvToStr rv
 
 -- | Wrap a key using provided wrapping key and return opaque byte array representing wrapped key.  This byte array
 -- can be stored in user application and can be used later to recreate wrapped key using 'unwrapKey' function.
@@ -691,9 +702,14 @@ unwrapKey mech (Session sessionHandle functionListPtr) key wrappedKey template =
         else return unwrappedKey
 
 -- | Mixes provided seed data with token's seed
-seedRandom (Session sessHandle funcListPtr) seedData = do
-  rv <- seedRandom' funcListPtr sessHandle seedData (fromIntegral $ BS.length seedData)
-  when (rv /= 0) $ fail $ "failed to seed random: " ++ rvToStr rv
+seedRandom ::
+     Session -- ^ Session to use
+  -> BS.ByteString -- ^ Seed data to be added to RNG's seed
+  -> IO ()
+seedRandom (Session sessHandle funcListPtr) seedData =
+  unsafeUseAsCStringLen seedData $ \(seedDataPtr, seedDataLen) -> do
+    rv <- seedRandom' funcListPtr sessHandle (castPtr seedDataPtr) (fromIntegral seedDataLen)
+    when (rv /= 0) $ fail $ "failed to seed random: " ++ rvToStr rv
 
 -- | Generates random data using token's RNG.
 generateRandom ::

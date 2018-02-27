@@ -1283,7 +1283,7 @@ getObjectAttr' functionListPtr sessionHandle objHandle attrType = do
 {#fun unsafe CK_FUNCTION_LIST.C_EncryptUpdate as encryptUpdate'
  {`FunctionListPtr',
   `SessionHandle',
-  unsafeUseAsCUCharPtr* `BS.ByteString',
+  castPtr `Ptr CUChar',
   `CULong',
   castPtr `Ptr CUChar',
   with* `CULong' peek*} -> `Rv'
@@ -1306,12 +1306,11 @@ getObjectAttr' functionListPtr sessionHandle objHandle attrType = do
 {#fun unsafe CK_FUNCTION_LIST.C_Digest as digest'
  {`FunctionListPtr',
   `SessionHandle',
-  unsafeUseAsCUCharPtr* `BS.ByteString',
+  castPtr `Ptr CUChar',
   `CULong',
   castPtr `Ptr CUChar',
   with* `CULong' peek*} -> `Rv'
 #}
-
 
 {#fun unsafe CK_FUNCTION_LIST.C_SignInit as signInit'
  {`FunctionListPtr',
@@ -1320,16 +1319,10 @@ getObjectAttr' functionListPtr sessionHandle objHandle attrType = do
   `ObjectHandle'} -> `Rv'
 #}
 
-
-unsafeUseAsCUCharPtr :: BS.ByteString -> (Ptr CUChar -> IO b) -> IO b
-unsafeUseAsCUCharPtr bs fn =
-    unsafeUseAsCString bs $ \cstrptr -> do
-        fn (castPtr cstrptr)
-
 {#fun unsafe CK_FUNCTION_LIST.C_Sign as sign'
  {`FunctionListPtr',
   `SessionHandle',
-  unsafeUseAsCUCharPtr* `BS.ByteString',
+  castPtr `Ptr CUChar',
   `CULong',
   castPtr `Ptr CUChar',
   with* `CULong' peek*} -> `Rv'
@@ -1347,7 +1340,7 @@ unsafeUseAsCUCharPtr bs fn =
 {#fun unsafe CK_FUNCTION_LIST.C_SignRecover as signRecover'
  {`FunctionListPtr',
   `SessionHandle',
-  unsafeUseAsCUCharPtr* `BS.ByteString',
+  castPtr `Ptr CUChar',
   `CULong',
   castPtr `Ptr CUChar',
   with* `CULong' peek*} -> `Rv'
@@ -1364,9 +1357,9 @@ unsafeUseAsCUCharPtr bs fn =
 {#fun unsafe CK_FUNCTION_LIST.C_Verify as verify'
  {`FunctionListPtr',
   `SessionHandle',
-  unsafeUseAsCUCharPtr* `BS.ByteString',
+  castPtr `Ptr CUChar',
   `CULong',
-  unsafeUseAsCUCharPtr* `BS.ByteString',
+  castPtr `Ptr CUChar',
   `CULong'} -> `Rv'
 #}
 
@@ -1396,7 +1389,7 @@ unsafeUseAsCUCharPtr bs fn =
 {#fun unsafe CK_FUNCTION_LIST.C_SeedRandom as seedRandom'
  {`FunctionListPtr',
   `SessionHandle',
-  unsafeUseAsCUCharPtr* `BS.ByteString',
+  castPtr `Ptr CUChar',
   `CULong'} -> `Rv'
 #}
 
