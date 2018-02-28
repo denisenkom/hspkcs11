@@ -12,12 +12,12 @@ defaultChunkSize = 4096
 
 lazyEncryptList :: Session -> [BS.ByteString] -> IO [BS.ByteString]
 lazyEncryptList sess (c:rest) = do
-  encC <- encryptUpdate sess c defaultChunkSize
+  encC <- encryptUpdate sess c (Just defaultChunkSize)
   encRest <- lazyEncryptList sess rest
   return (encC : encRest)
 
 lazyEncryptList sess [] = do
-  last <- encryptFinal sess defaultChunkSize
+  last <- encryptFinal sess (Just defaultChunkSize)
   return [last]
 
 

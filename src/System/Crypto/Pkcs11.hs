@@ -483,27 +483,50 @@ decryptInit mech (Session sessionHandle functionListPtr) obj = do
   rv <- decryptInit' functionListPtr sessionHandle mech obj
   when (rv /= 0) $ fail $ "failed to initiate decryption: " ++ rvToStr rv
 
+varLenGet :: Maybe CULong -> ((Ptr CUChar, CULong) -> IO (Rv, CULong)) -> IO (Rv, BS.ByteString)
+varLenGet Nothing func = do
+  (rv, needLen) <- func (nullPtr, 0)
+  if rv /= 0
+    then fail $ "failed to query resulting size for operation" ++ rvToStr rv
+    else allocaBytes (fromIntegral needLen) $ \outDataPtr -> do
+           (rv, actualLen) <- func (outDataPtr, needLen)
+           if rv == errBufferTooSmall
+             then fail "function returned CKR_BUFFER_TOO_SMALL when it shoudln't"
+             else if rv /= 0
+                    then return (rv, BS.empty)
+                    else do
+                      resBs <- BS.packCStringLen (castPtr outDataPtr, fromIntegral actualLen)
+                      return (rv, resBs)
+varLenGet (Just len) func =
+  allocaBytes (fromIntegral len) $ \outDataPtr -> do
+    (rv, actualLen) <- func (outDataPtr, len)
+    if rv /= 0
+      then return (rv, BS.empty)
+      else do
+        resBs <- BS.packCStringLen (castPtr outDataPtr, fromIntegral actualLen)
+        return (rv, resBs)
+
 -- | Decrypt data using provided mechanism and key handle.
 --
 -- Example AES ECB decryption.
 --
--- > decData <- decrypt (simpleMech AesEcb) sess aesKeyHandle encData 1000
+-- > decData <- decrypt (simpleMech AesEcb) sess aesKeyHandle encData Nothing
 decrypt ::
      Mech -- ^ Mechanism used for decryption.
   -> Session -- ^ Session on which key resides.
   -> ObjectHandle -- ^ Key handle used for decryption.
   -> BS.ByteString -- ^ Encrypted data to be decrypted.
-  -> CULong -- ^ Maximum number of bytes to be returned.
+  -> Maybe CULong -- ^ Maximum number of bytes to be returned.
   -> IO BS.ByteString -- ^ Decrypted data
-decrypt mech (Session sessionHandle functionListPtr) keyHandle encData outLen = do
+decrypt mech (Session sessionHandle functionListPtr) keyHandle encData maybeOutLen = do
   decryptInit mech (Session sessionHandle functionListPtr) keyHandle
-  unsafeUseAsCStringLen encData $ \(encDataPtr, encDataLen) ->
-    allocaBytes (fromIntegral outLen) $ \outDataPtr -> do
-      (rv, outDataLen) <-
-        decrypt' functionListPtr sessionHandle (castPtr encDataPtr) (fromIntegral encDataLen) outDataPtr outLen
-      if rv /= 0
-        then fail $ "failed to decrypt: " ++ rvToStr rv
-        else BS.packCStringLen (castPtr outDataPtr, fromIntegral outDataLen)
+  unsafeUseAsCStringLen encData $ \(encDataPtr, encDataLen) -> do
+    (rv, bs) <-
+      varLenGet maybeOutLen $ \(ptr, len) ->
+        decrypt' functionListPtr sessionHandle (castPtr encDataPtr) (fromIntegral encDataLen) (castPtr ptr) len
+    if rv /= 0
+      then fail $ "failed to decrypt: " ++ rvToStr rv
+      else return bs
 
 -- | Initialize multi-part encryption operation.
 encryptInit ::
@@ -521,33 +544,32 @@ encrypt ::
   -> Session -- ^ Session in which to perform operation.
   -> ObjectHandle -- ^ Key handle.
   -> BS.ByteString -- ^ Data to be encrypted.
-  -> CULong -- ^ Maximum number of bytes to be returned.
+  -> Maybe CULong -- ^ Maximum number of bytes to be returned.
   -> IO BS.ByteString -- ^ Encrypted data.
-encrypt mech (Session sessionHandle functionListPtr) keyHandle encData outLen = do
+encrypt mech (Session sessionHandle functionListPtr) keyHandle encData maybeOutLen = do
   encryptInit mech (Session sessionHandle functionListPtr) keyHandle
-  unsafeUseAsCStringLen encData $ \(encDataPtr, encDataLen) ->
-    allocaBytes (fromIntegral outLen) $ \outDataPtr -> do
-      (rv, outDataLen) <-
-        encrypt' functionListPtr sessionHandle (castPtr encDataPtr) (fromIntegral encDataLen) outDataPtr outLen
-      if rv /= 0
-        then fail $ "failed to decrypt: " ++ rvToStr rv
-        else BS.packCStringLen (castPtr outDataPtr, fromIntegral outDataLen)
-
-encryptUpdate (Session sessHandle funcListPtr) inData outLen =
-  unsafeUseAsCStringLen inData $ \(inDataPtr, inDataLen) ->
-    allocaBytes (fromIntegral outLen) $ \outPtr -> do
-      (rv, outResLen) <-
-        encryptUpdate' funcListPtr sessHandle (castPtr inDataPtr) (fromIntegral inDataLen) outPtr outLen
-      if rv /= 0
-        then fail $ "failed to encrypt part: " ++ rvToStr rv
-        else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
-
-encryptFinal (Session sessHandle funcListPtr) outLen =
-  allocaBytes (fromIntegral outLen) $ \outPtr -> do
-    (rv, outResLen) <- encryptFinal' funcListPtr sessHandle outPtr outLen
+  unsafeUseAsCStringLen encData $ \(encDataPtr, encDataLen) -> do
+    (rv, bs) <-
+      varLenGet maybeOutLen $
+      uncurry (encrypt' functionListPtr sessionHandle (castPtr encDataPtr) (fromIntegral encDataLen))
     if rv /= 0
-      then fail $ "failed to complete encryption: " ++ rvToStr rv
-      else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
+      then fail $ "failed to decrypt: " ++ rvToStr rv
+      else return bs
+
+encryptUpdate (Session sessHandle funcListPtr) inData maybeOutLen =
+  unsafeUseAsCStringLen inData $ \(inDataPtr, inDataLen) -> do
+    (rv, bs) <-
+      varLenGet maybeOutLen $
+      uncurry (encryptUpdate' funcListPtr sessHandle (castPtr inDataPtr) (fromIntegral inDataLen))
+    if rv /= 0
+      then fail $ "failed to encrypt part: " ++ rvToStr rv
+      else return bs
+
+encryptFinal (Session sessHandle funcListPtr) maybeOutLen = do
+  (rv, bs) <- varLenGet maybeOutLen $ uncurry (encryptFinal' funcListPtr sessHandle)
+  if rv /= 0
+    then fail $ "failed to complete encryption: " ++ rvToStr rv
+    else return bs
 
 digestInit :: Mech -> Session -> IO ()
 digestInit mech (Session sessHandle funcListPtr) = do
@@ -558,23 +580,23 @@ digestInit mech (Session sessHandle funcListPtr) = do
 --
 -- Example calculating SHA256 hash:
 --
--- >>> digest (simpleMech Sha256) sess (replicate 16 0) 1000
+-- >>> digest (simpleMech Sha256) sess (replicate 16 0) Nothing
 -- "7G\b\255\247q\157\213\151\158\200u\213l\210(om<\247\236\&1z;%c*\171(\236\&7\187"
 digest ::
      Mech -- ^ Digest mechanism.
   -> Session -- ^ Session to be used for digesting.
   -> BS.ByteString -- ^ Data to be digested.
-  -> CULong -- ^ Maximum number of bytes to be returned.
+  -> Maybe CULong -- ^ Maximum number of bytes to be returned.
   -> IO BS.ByteString -- ^ Resulting digest.
-digest mech (Session sessHandle funcListPtr) digestData outLen = do
+digest mech (Session sessHandle funcListPtr) digestData maybeOutLen = do
   digestInit mech (Session sessHandle funcListPtr)
-  unsafeUseAsCStringLen digestData $ \(digestDataPtr, digestDataLen) ->
-    allocaBytes (fromIntegral outLen) $ \outPtr -> do
-      (rv, outResLen) <-
-        digest' funcListPtr sessHandle (castPtr digestDataPtr) (fromIntegral digestDataLen) outPtr outLen
-      if rv /= 0
-        then fail $ "failed to digest: " ++ rvToStr rv
-        else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
+  unsafeUseAsCStringLen digestData $ \(digestDataPtr, digestDataLen) -> do
+    (rv, bs) <-
+      varLenGet maybeOutLen $
+      uncurry (digest' funcListPtr sessHandle (castPtr digestDataPtr) (fromIntegral digestDataLen))
+    if rv /= 0
+      then fail $ "failed to digest: " ++ rvToStr rv
+      else return bs
 
 signInit :: Mech -> Session -> ObjectHandle -> IO ()
 signInit mech (Session sessHandle funcListPtr) objHandle = do
@@ -585,36 +607,36 @@ signInit mech (Session sessHandle funcListPtr) objHandle = do
 --
 -- Example signing with RSA PKCS#1
 --
--- > signature <- sign (simpleMech RsaPkcs) sess privKeyHandle signedData 1000
+-- > signature <- sign (simpleMech RsaPkcs) sess privKeyHandle signedData Nothing
 sign ::
      Mech -- ^ Mechanism to use for signing.
   -> Session -- ^ Session to work in.
   -> ObjectHandle -- ^ Key handle.
   -> BS.ByteString -- ^ Data to be signed.
-  -> CULong -- ^ Maximum number of bytes to be returned.
+  -> Maybe CULong -- ^ Maximum number of bytes to be returned.
   -> IO BS.ByteString -- ^ Signature.
-sign mech (Session sessHandle funcListPtr) key signData outLen = do
+sign mech (Session sessHandle funcListPtr) key signData maybeOutLen = do
   signInit mech (Session sessHandle funcListPtr) key
-  unsafeUseAsCStringLen signData $ \(signDataPtr, signDataLen) ->
-    allocaBytes (fromIntegral outLen) $ \outPtr -> do
-      (rv, outResLen) <- sign' funcListPtr sessHandle (castPtr signDataPtr) (fromIntegral signDataLen) outPtr outLen
-      if rv /= 0
-        then fail $ "failed to sign: " ++ rvToStr rv
-        else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
+  unsafeUseAsCStringLen signData $ \(signDataPtr, signDataLen) -> do
+    (rv, bs) <-
+      varLenGet maybeOutLen $ uncurry (sign' funcListPtr sessHandle (castPtr signDataPtr) (fromIntegral signDataLen))
+    if rv /= 0
+      then fail $ "failed to sign: " ++ rvToStr rv
+      else return bs
 
 signRecoverInit :: Mech -> Session -> ObjectHandle -> IO ()
 signRecoverInit mech (Session sessHandle funcListPtr) objHandle = do
   rv <- signRecoverInit' funcListPtr sessHandle mech objHandle
   when (rv /= 0) $ fail $ "failed to initialize signing with recovery operation: " ++ rvToStr rv
 
-signRecover (Session sessHandle funcListPtr) signData outLen =
-  unsafeUseAsCStringLen signData $ \(signDataPtr, signDataLen) ->
-    allocaBytes (fromIntegral outLen) $ \outPtr -> do
-      (rv, outResLen) <-
-        signRecover' funcListPtr sessHandle (castPtr signDataPtr) (fromIntegral signDataLen) outPtr outLen
-      if rv /= 0
-        then fail $ "failed to sign with recovery: " ++ rvToStr rv
-        else BS.packCStringLen (castPtr outPtr, fromIntegral outResLen)
+signRecover (Session sessHandle funcListPtr) signData maybeOutLen =
+  unsafeUseAsCStringLen signData $ \(signDataPtr, signDataLen) -> do
+    (rv, bs) <-
+      varLenGet maybeOutLen $
+      uncurry (signRecover' funcListPtr sessHandle (castPtr signDataPtr) (fromIntegral signDataLen))
+    if rv /= 0
+      then fail $ "failed to sign with recovery: " ++ rvToStr rv
+      else return bs
 
 verifyInit :: Session -> Mech -> ObjectHandle -> IO ()
 verifyInit (Session sessHandle funcListPtr) mech objHandle = do
@@ -648,7 +670,7 @@ verify mech (Session sessHandle funcListPtr) keyHandle signData signatureData = 
           (fromIntegral signatureDataLen)
       if rv == 0
         then return True
-        else if rv == fromIntegral errSignatureInvalid
+        else if rv == errSignatureInvalid
                then return False
                else fail $ "failed to verify: " ++ rvToStr rv
 
@@ -657,20 +679,19 @@ verify mech (Session sessHandle funcListPtr) keyHandle signData signatureData = 
 --
 -- Example wrapping AES key using RSA public key:
 --
--- > wrappedAesKey <- wrapKey (simpleMech RsaPkcs) sess pubRsaKeyHandle aesKeyHandle 300
+-- > wrappedAesKey <- wrapKey (simpleMech RsaPkcs) sess pubRsaKeyHandle aesKeyHandle Nothing
 wrapKey ::
      Mech -- ^ Mechanism used to wrap key (to encrypt)
   -> Session -- ^ Session in which both keys reside.
   -> ObjectHandle -- ^ Key which will be used to wrap (encrypt) another key
   -> ObjectHandle -- ^ Key to be wrapped
-  -> CULong -- ^ Maximum size in bytes of a resulting byte array
+  -> Maybe CULong -- ^ Maximum size in bytes of a resulting byte array
   -> IO BS.ByteString -- ^ Resulting opaque wrapped key
-wrapKey mech (Session sessHandle funcListPtr) wrappingKey key dataLen =
-  allocaBytes (fromIntegral dataLen) $ \dataPtr -> do
-    (rv, outDataLen) <- wrapKey' funcListPtr sessHandle mech wrappingKey key dataPtr dataLen
-    if rv /= 0
-      then fail $ "failed to wrap key: " ++ rvToStr rv
-      else BS.packCStringLen (castPtr dataPtr, fromIntegral outDataLen)
+wrapKey mech (Session sessHandle funcListPtr) wrappingKey key maybeOutLen = do
+  (rv, bs) <- varLenGet maybeOutLen $ uncurry (wrapKey' funcListPtr sessHandle mech wrappingKey key)
+  if rv /= 0
+    then fail $ "failed to wrap key: " ++ rvToStr rv
+    else return bs
 
 -- | Unwrap a key from opaque byte string and apply attributes to a resulting key object.
 --

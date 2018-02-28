@@ -57,7 +57,8 @@ type SessionHandle = {#type CK_SESSION_HANDLE#}
 {#pointer *CK_MECHANISM_INFO as MechInfoPtr -> MechInfo#}
 {#pointer *CK_MECHANISM as MechPtr -> Mech#}
 
-errSignatureInvalid = {#const CKR_SIGNATURE_INVALID#}
+errSignatureInvalid = {#const CKR_SIGNATURE_INVALID#} :: {#type CK_RV#}
+errBufferTooSmall = {#const CKR_BUFFER_TOO_SMALL#} :: {#type CK_RV#}
 
 -- defined this one manually because I don't know how to make c2hs to define it yet
 type GetFunctionListFun = (C2HSImp.Ptr (FunctionListPtr)) -> (IO C2HSImp.CULong)

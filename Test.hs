@@ -74,19 +74,19 @@ main = do
         encData <- PL.encrypt sess (BSL.pack [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0])
         putStrLn $ show encData
         putStrLn "decryption"
-        decData <- decrypt (simpleMech AesEcb) sess aesKeyHandle (BSL.toStrict encData) 1000
+        decData <- decrypt (simpleMech AesEcb) sess aesKeyHandle (BSL.toStrict encData) Nothing
         putStrLn $ show decData
         putStrLn "generating key pair"
         (pubKeyHandle, privKeyHandle) <- generateKeyPair sess (simpleMech RsaPkcsKeyPairGen) [ModulusBits 2048, Token True, Label "key"] [Token True, Label "key"]
         putStrLn $ "generated " ++ (show pubKeyHandle) ++ " and " ++ (show privKeyHandle)
         putStrLn "wrap key"
-        wrappedAesKey <- wrapKey (simpleMech RsaPkcs) sess pubKeyHandle aesKeyHandle 300
+        wrappedAesKey <- wrapKey (simpleMech RsaPkcs) sess pubKeyHandle aesKeyHandle Nothing
         putStrLn $ show wrappedAesKey
         putStrLn "unwrap key"
         unwrappedAesKey <- unwrapKey (simpleMech RsaPkcs) sess privKeyHandle wrappedAesKey [Class SecretKey, KeyType AES]
         putStrLn "sign"
         let signedData = BS.pack [0,0,0,0]
-        signature <- sign (simpleMech RsaPkcs) sess privKeyHandle signedData 1000
+        signature <- sign (simpleMech RsaPkcs) sess privKeyHandle signedData Nothing
         putStrLn $ show signature
         --putStrLn "get operation state"
         --operState <- getOperationState sess 1000
@@ -112,7 +112,7 @@ main = do
         putStrLn "deleting object"
         destroyObject sess aesKeyHandle
         putStrLn "digest"
-        digestedData <- digest (simpleMech Sha256) sess (BS.replicate 16 0) 1000
+        digestedData <- digest (simpleMech Sha256) sess (BS.replicate 16 0) Nothing
         putStrLn $ show digestedData
         putStrLn "create object"
         createdAesKey <- createObject sess [Class SecretKey,
@@ -136,7 +136,7 @@ main = do
         derEcParams <- getEcdsaParams sess ecPubKey
         putStrLn $ "EC point DER=" ++ (show $ B64.encode derEcPoint) ++ " params DER=" ++ (show $ B64.encode derEcParams)
         putStrLn "signing with ECDSA"
-        ecSignature <- sign (simpleMech Ecdsa) sess ecPrivKey signedData 1024
+        ecSignature <- sign (simpleMech Ecdsa) sess ecPrivKey signedData Nothing
         putStrLn $ show ecSignature
         putStrLn "verifying signature"
         ecVerifyRes <- verify (simpleMech Ecdsa) sess ecPubKey signedData ecSignature
@@ -183,11 +183,11 @@ main = do
             encryptedMessage = AESmod.encryptECB aesKey "hello00000000000"
 
         -- test decryption using RSA key
-        dec <- decrypt (simpleMech RsaPkcs) sess objId (BSL.toStrict encKey) 1000
+        dec <- decrypt (simpleMech RsaPkcs) sess objId (BSL.toStrict encKey) Nothing
         putStrLn $ show dec
 
         -- test decryption using AES key
-        decAes <- decrypt (simpleMech AesEcb) sess unwrappedKeyHandle encryptedMessage 1000
+        decAes <- decrypt (simpleMech AesEcb) sess unwrappedKeyHandle encryptedMessage Nothing
         putStrLn $ show decAes
         logout sess
 
