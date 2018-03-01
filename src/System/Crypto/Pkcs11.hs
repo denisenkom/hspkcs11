@@ -1,7 +1,8 @@
 -- | This is the main module that contains bindings for PKCS#11 interface.
 module System.Crypto.Pkcs11
+  (
     -- * Library
-  ( Library
+    Library
   , loadLibrary
   , releaseLibrary
     -- ** Reading library information
