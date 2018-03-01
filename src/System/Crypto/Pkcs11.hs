@@ -64,7 +64,7 @@ module System.Crypto.Pkcs11
   , SessionState(..)
   , getOperationState
     -- * Object attributes
-  , ObjectHandle
+  , Object
   , Attribute(..)
   , ClassType(..)
   , KeyTypeValue(..)
@@ -142,6 +142,12 @@ data Library = Library
   , functionListPtr :: FunctionListPtr
   }
 
+data Object =
+  Object FunctionListPtr
+         SessionHandle
+         ObjectHandle
+  deriving (Show)
+
 -- | Return parameterless mechanism which can be used in cryptographic operation.
 simpleMech :: MechType -> Mech
 simpleMech mechType = Mech mechType nullPtr 0
@@ -199,7 +205,7 @@ getOperationState (Session sessHandle funcListPtr) maxSize =
       else BS.packCStringLen (castPtr bytesPtr, fromIntegral resSize)
 
 -- | Deletes an object from token or session.
-destroyObject (Session sessHandle funcListPtr) objectHandle = do
+destroyObject (Object funcListPtr sessHandle objectHandle) = do
   rv <- destroyObject' funcListPtr sessHandle objectHandle
   when (rv /= 0) $ fail $ "failed to destroy object: " ++ rvToStr rv
 
@@ -214,13 +220,13 @@ destroyObject (Session sessHandle funcListPtr) objectHandle = do
 -- Generate 1024-bit Diffie-Hellman domain parameters using PKCS#3 mechanism:
 --
 -- > dhParamsHandle <- generateKey sess (simpleMech DhPkcsParameterGen) [PrimeBits 1028]
-generateKey :: Session -> Mech -> [Attribute] -> IO ObjectHandle
-generateKey (Session sessHandle funcListPtr) mech attribs =
+generateKey :: Mech -> [Attribute] -> Session -> IO Object
+generateKey mech attribs (Session sessHandle funcListPtr) =
   _withAttribs attribs $ \attrPtr -> do
     (rv, keyHandle) <- generateKey' funcListPtr sessHandle mech attrPtr (fromIntegral $ length attribs)
     if rv /= 0
       then fail $ "failed to generate key: " ++ rvToStr rv
-      else return keyHandle
+      else return $ Object funcListPtr sessHandle keyHandle
 
 -- | Represent session. Created by 'withSession' function.
 data Session =
@@ -288,12 +294,12 @@ _findObjectsInit (Session sessionHandle functionListPtr) attribs =
     rv <- findObjectsInit' functionListPtr sessionHandle attribsPtr (fromIntegral $ length attribs)
     when (rv /= 0) $ fail $ "failed to initialize search: " ++ rvToStr rv
 
-_findObjectsEx :: Session -> IO [ObjectHandle]
+_findObjectsEx :: Session -> IO [Object]
 _findObjectsEx (Session sessionHandle functionListPtr) = do
   (rv, objectsHandles) <- findObjects' functionListPtr sessionHandle 10
   if rv /= 0
     then fail $ "failed to execute search: " ++ rvToStr rv
-    else return objectsHandles
+    else return $ map (Object functionListPtr sessionHandle) objectsHandles
 
 _findObjectsFinalEx :: Session -> IO ()
 _findObjectsFinalEx (Session sessionHandle functionListPtr) = do
@@ -301,7 +307,7 @@ _findObjectsFinalEx (Session sessionHandle functionListPtr) = do
   when (rv /= 0) $ fail $ "failed to finalize search: " ++ rvToStr rv
 
 -- | Searches current session for objects matching provided attributes list, returns a list of matching object handles
-findObjects :: Session -> [Attribute] -> IO [ObjectHandle]
+findObjects :: Session -> [Attribute] -> IO [Object]
 findObjects session attribs = do
   _findObjectsInit session attribs
   finally (_findObjectsEx session) (_findObjectsFinalEx session)
@@ -314,16 +320,16 @@ findObjects session attribs = do
 --
 -- > (pubKey, privKey) <- generateKeyPair sess (simpleMech RsaPkcsKeyPairGen) [ModulusBits 2048] []
 generateKeyPair ::
-     Session -- ^ session in which to generate key
-  -> Mech -- ^ a mechanism to use for key generation, for example 'simpleMech RsaPkcs'
+     Mech -- ^ a mechanism to use for key generation, for example 'simpleMech RsaPkcs'
   -> [Attribute] -- ^ attributes applied to generated public key object
   -> [Attribute] -- ^ attributes applied to generated private key object
-  -> IO (ObjectHandle, ObjectHandle) -- ^ created objects references, first is public key, second is private key
-generateKeyPair (Session sessionHandle functionListPtr) mech pubKeyAttrs privKeyAttrs = do
+  -> Session -- ^ session in which to generate key
+  -> IO (Object, Object) -- ^ created objects references, first is public key, second is private key
+generateKeyPair mech pubKeyAttrs privKeyAttrs (Session sessionHandle functionListPtr) = do
   (rv, pubKeyHandle, privKeyHandle) <- _generateKeyPair functionListPtr sessionHandle mech pubKeyAttrs privKeyAttrs
   if rv /= 0
     then fail $ "failed to generate key pair: " ++ rvToStr rv
-    else return (pubKeyHandle, privKeyHandle)
+    else return (Object functionListPtr sessionHandle pubKeyHandle, Object functionListPtr sessionHandle privKeyHandle)
 
 -- | Initialize a token in a given slot.  All objects created by user on the token are destroyed.
 initToken ::
@@ -375,7 +381,7 @@ createObject (Session sessHandle funcListPtr) attribs =
       else return createdHandle
 
 -- | Makes a copy of an object and changes attributes of copied object, returns a reference to new object.
-copyObject (Session sessHandle funcListPtr) objHandle attribs =
+copyObject (Object funcListPtr sessHandle objHandle) attribs =
   _withAttribs attribs $ \attribsPtr -> do
     (rv, createdHandle) <- copyObject' funcListPtr sessHandle objHandle attribsPtr (fromIntegral $ length attribs)
     if rv /= 0
@@ -383,63 +389,63 @@ copyObject (Session sessHandle funcListPtr) objHandle attribs =
       else return createdHandle
 
 -- | Returns an approximate amount of space occupied by an object in bytes.
-getObjectSize (Session sessHandle funcListPtr) objHandle = do
+getObjectSize (Object funcListPtr sessHandle objHandle) = do
   (rv, objSize) <- getObjectSize' funcListPtr sessHandle objHandle
   if rv /= 0
     then fail $ "failed to get object size: " ++ rvToStr rv
     else return objSize
 
-getBoolAttr :: Session -> ObjectHandle -> AttributeType -> IO Bool
-getBoolAttr (Session sessHandle funcListPtr) objHandle attrType =
+getBoolAttr :: AttributeType -> Object -> IO Bool
+getBoolAttr attrType (Object funcListPtr sessHandle objHandle) =
   alloca $ \valuePtr -> do
     _getAttr funcListPtr sessHandle objHandle attrType (valuePtr :: Ptr CK_BBOOL)
     val <- peek valuePtr
     return $ toBool val
 
-getTokenFlag sess objHandle = getBoolAttr sess objHandle TokenType
+getTokenFlag = getBoolAttr TokenType
 
-getPrivateFlag sess objHandle = getBoolAttr sess objHandle PrivateType
+getPrivateFlag = getBoolAttr PrivateType
 
-getSensitiveFlag sess objHandle = getBoolAttr sess objHandle SensitiveType
+getSensitiveFlag = getBoolAttr SensitiveType
 
-getEncryptFlag sess objHandle = getBoolAttr sess objHandle EncryptType
+getEncryptFlag = getBoolAttr EncryptType
 
-getDecryptFlag sess objHandle = getBoolAttr sess objHandle DecryptType
+getDecryptFlag = getBoolAttr DecryptType
 
-getWrapFlag sess objHandle = getBoolAttr sess objHandle WrapType
+getWrapFlag = getBoolAttr WrapType
 
-getUnwrapFlag sess objHandle = getBoolAttr sess objHandle UnwrapType
+getUnwrapFlag = getBoolAttr UnwrapType
 
-getSignFlag sess objHandle = getBoolAttr sess objHandle SignType
+getSignFlag = getBoolAttr SignType
 
-getModulus :: Session -> ObjectHandle -> IO Integer
-getModulus (Session sessHandle funcListPtr) objHandle = do
+getModulus :: Object -> IO Integer
+getModulus (Object funcListPtr sessHandle objHandle) = do
   (Modulus m) <- getObjectAttr' funcListPtr sessHandle objHandle ModulusType
   return m
 
-getPublicExponent :: Session -> ObjectHandle -> IO Integer
-getPublicExponent (Session sessHandle funcListPtr) objHandle = do
+getPublicExponent :: Object -> IO Integer
+getPublicExponent (Object funcListPtr sessHandle objHandle) = do
   (PublicExponent v) <- getObjectAttr' funcListPtr sessHandle objHandle PublicExponentType
   return v
 
-getPrime (Session sessHandle funcListPtr) objHandle = do
+getPrime (Object funcListPtr sessHandle objHandle) = do
   (Prime p) <- getObjectAttr' funcListPtr sessHandle objHandle PrimeType
   return p
 
-getBase (Session sessHandle funcListPtr) objHandle = do
+getBase (Object funcListPtr sessHandle objHandle) = do
   (Base p) <- getObjectAttr' funcListPtr sessHandle objHandle BaseType
   return p
 
-getEcdsaParams (Session sessHandle funcListPtr) objHandle = do
+getEcdsaParams (Object funcListPtr sessHandle objHandle) = do
   (EcdsaParams bs) <- getObjectAttr' funcListPtr sessHandle objHandle EcParamsType
   return bs
 
-getEcPoint (Session sessHandle funcListPtr) objHandle = do
+getEcPoint (Object funcListPtr sessHandle objHandle) = do
   (EcPoint bs) <- getObjectAttr' funcListPtr sessHandle objHandle EcPointType
   return bs
 
 -- | Modifies attributes of an object.
-setAttributes (Session sessHandle funcListPtr) objHandle attribs =
+setAttributes (Object funcListPtr sessHandle objHandle) attribs =
   _withAttribs attribs $ \attribsPtr -> do
     rv <- setAttributeValue' funcListPtr sessHandle objHandle attribsPtr (fromIntegral $ length attribs)
     when (rv /= 0) $ fail $ "failed to set attributes: " ++ rvToStr rv
@@ -478,9 +484,9 @@ logout (Session sessionHandle functionListPtr) = do
   when (rv /= 0) $ fail $ "logout failed: " ++ rvToStr rv
 
 -- | Initialize a multi-part decryption operation using provided mechanism and key.
-decryptInit :: Mech -> Session -> ObjectHandle -> IO ()
-decryptInit mech (Session sessionHandle functionListPtr) obj = do
-  rv <- decryptInit' functionListPtr sessionHandle mech obj
+decryptInit :: Mech -> Object -> IO ()
+decryptInit mech (Object funcListPtr sessionHandle objHandle) = do
+  rv <- decryptInit' funcListPtr sessionHandle mech objHandle
   when (rv /= 0) $ fail $ "failed to initiate decryption: " ++ rvToStr rv
 
 varLenGet :: Maybe CULong -> ((Ptr CUChar, CULong) -> IO (Rv, CULong)) -> IO (Rv, BS.ByteString)
@@ -513,13 +519,12 @@ varLenGet (Just len) func =
 -- > decData <- decrypt (simpleMech AesEcb) sess aesKeyHandle encData Nothing
 decrypt ::
      Mech -- ^ Mechanism used for decryption.
-  -> Session -- ^ Session on which key resides.
-  -> ObjectHandle -- ^ Key handle used for decryption.
+  -> Object -- ^ Key object used for decryption.
   -> BS.ByteString -- ^ Encrypted data to be decrypted.
   -> Maybe CULong -- ^ Maximum number of bytes to be returned.
   -> IO BS.ByteString -- ^ Decrypted data
-decrypt mech (Session sessionHandle functionListPtr) keyHandle encData maybeOutLen = do
-  decryptInit mech (Session sessionHandle functionListPtr) keyHandle
+decrypt mech (Object functionListPtr sessionHandle keyHandle) encData maybeOutLen = do
+  decryptInit mech (Object functionListPtr sessionHandle keyHandle)
   unsafeUseAsCStringLen encData $ \(encDataPtr, encDataLen) -> do
     (rv, bs) <-
       varLenGet maybeOutLen $ \(ptr, len) ->
@@ -531,23 +536,21 @@ decrypt mech (Session sessionHandle functionListPtr) keyHandle encData maybeOutL
 -- | Initialize multi-part encryption operation.
 encryptInit ::
      Mech -- ^ Mechanism to use for encryption.
-  -> Session -- ^ Session in which to perform operation.
-  -> ObjectHandle -- ^ Key handle.
+  -> Object -- ^ Encryption key.
   -> IO ()
-encryptInit mech (Session sessionHandle functionListPtr) obj = do
+encryptInit mech (Object functionListPtr sessionHandle obj) = do
   rv <- encryptInit' functionListPtr sessionHandle mech obj
   when (rv /= 0) $ fail $ "failed to initiate decryption: " ++ rvToStr rv
 
 -- | Encrypt data using provided mechanism and key handle.
 encrypt ::
      Mech -- ^ Mechanism to use for encryption.
-  -> Session -- ^ Session in which to perform operation.
-  -> ObjectHandle -- ^ Key handle.
+  -> Object -- ^ Encryption key.
   -> BS.ByteString -- ^ Data to be encrypted.
   -> Maybe CULong -- ^ Maximum number of bytes to be returned.
   -> IO BS.ByteString -- ^ Encrypted data.
-encrypt mech (Session sessionHandle functionListPtr) keyHandle encData maybeOutLen = do
-  encryptInit mech (Session sessionHandle functionListPtr) keyHandle
+encrypt mech (Object functionListPtr sessionHandle keyHandle) encData maybeOutLen = do
+  encryptInit mech (Object functionListPtr sessionHandle keyHandle)
   unsafeUseAsCStringLen encData $ \(encDataPtr, encDataLen) -> do
     (rv, bs) <-
       varLenGet maybeOutLen $
@@ -598,8 +601,8 @@ digest mech (Session sessHandle funcListPtr) digestData maybeOutLen = do
       then fail $ "failed to digest: " ++ rvToStr rv
       else return bs
 
-signInit :: Mech -> Session -> ObjectHandle -> IO ()
-signInit mech (Session sessHandle funcListPtr) objHandle = do
+signInit :: Mech -> Object -> IO ()
+signInit mech (Object funcListPtr sessHandle objHandle) = do
   rv <- signInit' funcListPtr sessHandle mech objHandle
   when (rv /= 0) $ fail $ "failed to initialize signing operation: " ++ rvToStr rv
 
@@ -610,13 +613,12 @@ signInit mech (Session sessHandle funcListPtr) objHandle = do
 -- > signature <- sign (simpleMech RsaPkcs) sess privKeyHandle signedData Nothing
 sign ::
      Mech -- ^ Mechanism to use for signing.
-  -> Session -- ^ Session to work in.
-  -> ObjectHandle -- ^ Key handle.
+  -> Object -- ^ Signing key (usually private key).
   -> BS.ByteString -- ^ Data to be signed.
   -> Maybe CULong -- ^ Maximum number of bytes to be returned.
   -> IO BS.ByteString -- ^ Signature.
-sign mech (Session sessHandle funcListPtr) key signData maybeOutLen = do
-  signInit mech (Session sessHandle funcListPtr) key
+sign mech (Object funcListPtr sessHandle key) signData maybeOutLen = do
+  signInit mech (Object funcListPtr sessHandle key)
   unsafeUseAsCStringLen signData $ \(signDataPtr, signDataLen) -> do
     (rv, bs) <-
       varLenGet maybeOutLen $ uncurry (sign' funcListPtr sessHandle (castPtr signDataPtr) (fromIntegral signDataLen))
@@ -624,8 +626,8 @@ sign mech (Session sessHandle funcListPtr) key signData maybeOutLen = do
       then fail $ "failed to sign: " ++ rvToStr rv
       else return bs
 
-signRecoverInit :: Mech -> Session -> ObjectHandle -> IO ()
-signRecoverInit mech (Session sessHandle funcListPtr) objHandle = do
+signRecoverInit :: Mech -> Object -> IO ()
+signRecoverInit mech (Object funcListPtr sessHandle objHandle) = do
   rv <- signRecoverInit' funcListPtr sessHandle mech objHandle
   when (rv /= 0) $ fail $ "failed to initialize signing with recovery operation: " ++ rvToStr rv
 
@@ -638,8 +640,8 @@ signRecover (Session sessHandle funcListPtr) signData maybeOutLen =
       then fail $ "failed to sign with recovery: " ++ rvToStr rv
       else return bs
 
-verifyInit :: Session -> Mech -> ObjectHandle -> IO ()
-verifyInit (Session sessHandle funcListPtr) mech objHandle = do
+verifyInit :: Mech -> Object -> IO ()
+verifyInit mech (Object funcListPtr sessHandle objHandle) = do
   rv <- verifyInit' funcListPtr sessHandle mech objHandle
   when (rv /= 0) $ fail $ "failed to initialize verify operation: " ++ rvToStr rv
 
@@ -651,13 +653,12 @@ verifyInit (Session sessHandle funcListPtr) mech objHandle = do
 -- True
 verify ::
      Mech -- ^ Mechanism to be used for signature validation.
-  -> Session -- ^ Session to be used.
-  -> ObjectHandle -- ^ Key handle.
+  -> Object -- ^ Verification key (usually public key).
   -> BS.ByteString -- ^ Signed data.
   -> BS.ByteString -- ^ Signature.
   -> IO Bool -- ^ True is signature is valid, False otherwise.
-verify mech (Session sessHandle funcListPtr) keyHandle signData signatureData = do
-  verifyInit (Session sessHandle funcListPtr) mech keyHandle
+verify mech (Object funcListPtr sessHandle keyHandle) signData signatureData = do
+  verifyInit mech (Object funcListPtr sessHandle keyHandle)
   unsafeUseAsCStringLen signData $ \(signDataPtr, signDataLen) ->
     unsafeUseAsCStringLen signatureData $ \(signatureDataPtr, signatureDataLen) -> do
       rv <-
@@ -682,12 +683,11 @@ verify mech (Session sessHandle funcListPtr) keyHandle signData signatureData = 
 -- > wrappedAesKey <- wrapKey (simpleMech RsaPkcs) sess pubRsaKeyHandle aesKeyHandle Nothing
 wrapKey ::
      Mech -- ^ Mechanism used to wrap key (to encrypt)
-  -> Session -- ^ Session in which both keys reside.
-  -> ObjectHandle -- ^ Key which will be used to wrap (encrypt) another key
-  -> ObjectHandle -- ^ Key to be wrapped
+  -> Object -- ^ Key which will be used to wrap (encrypt) another key
+  -> Object -- ^ Key to be wrapped
   -> Maybe CULong -- ^ Maximum size in bytes of a resulting byte array
   -> IO BS.ByteString -- ^ Resulting opaque wrapped key
-wrapKey mech (Session sessHandle funcListPtr) wrappingKey key maybeOutLen = do
+wrapKey mech (Object funcListPtr sessHandle wrappingKey) (Object _ _ key) maybeOutLen = do
   (rv, bs) <- varLenGet maybeOutLen $ uncurry (wrapKey' funcListPtr sessHandle mech wrappingKey key)
   if rv /= 0
     then fail $ "failed to wrap key: " ++ rvToStr rv
@@ -700,12 +700,11 @@ wrapKey mech (Session sessHandle funcListPtr) wrappingKey key maybeOutLen = do
 -- > unwrappedAesKey <- unwrapKey (simpleMech RsaPkcs) sess privRsaKeyHandle wrappedAesKey [Class SecretKey, KeyType AES]
 unwrapKey ::
      Mech -- ^ Mechanism to use for unwrapping (decryption).
-  -> Session -- ^ Session in which to perform operation.
-  -> ObjectHandle -- ^ Handle to a key which will be used to unwrap (decrypt) key.
+  -> Object -- ^ Handle to a key which will be used to unwrap (decrypt) key.
   -> BS.ByteString -- ^ Key to be unwrapped.
   -> [Attribute] -- ^ Attributes applied to unwrapped key object.
-  -> IO ObjectHandle -- ^ Unwrapped key handle.
-unwrapKey mech (Session sessionHandle functionListPtr) key wrappedKey template =
+  -> IO Object -- ^ Unwrapped key handle.
+unwrapKey mech (Object functionListPtr sessionHandle key) wrappedKey template =
   _withAttribs template $ \attribsPtr ->
     unsafeUseAsCStringLen wrappedKey $ \(wrappedKeyPtr, wrappedKeyLen) -> do
       (rv, unwrappedKey) <-
@@ -720,7 +719,7 @@ unwrapKey mech (Session sessionHandle functionListPtr) key wrappedKey template =
           (fromIntegral $ length template)
       if rv /= 0
         then fail $ "failed to unwrap key: " ++ rvToStr rv
-        else return unwrappedKey
+        else return $ Object functionListPtr sessionHandle unwrappedKey
 
 -- | Mixes provided seed data with token's seed
 seedRandom ::
