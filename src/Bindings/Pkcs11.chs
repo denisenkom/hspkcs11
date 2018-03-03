@@ -497,6 +497,7 @@ rvToStr {#const CKR_USER_TYPE_INVALID#} = "invalid value for user type"
 rvToStr {#const CKR_WRAPPED_KEY_INVALID#} = "wrapped key invalid"
 rvToStr {#const CKR_WRAPPED_KEY_LEN_RANGE#} = "wrapped key length not in range"
 rvToStr {#const CKR_KEY_UNEXTRACTABLE#} = "key unextractable"
+rvToStr {#const CKR_CRYPTOKI_ALREADY_INITIALIZED#} = "cryptoki already initialized"
 rvToStr rv = "unknown value for error " ++ (show rv)
 
 

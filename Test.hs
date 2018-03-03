@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
+import Test.HUnit
 import qualified Data.ByteString.UTF8 as BU8
-import System.Crypto.Pkcs11
+import System.Crypto.Pkcs11 as P
 import qualified System.Crypto.Pkcs11.Lazy as PL
 import Crypto.Random
 import Crypto.Random.AESCtr
@@ -19,16 +20,29 @@ import Numeric
 --         generateKeyPair sess RsaPkcsKeyPairGen [ModulusBits 2048, Label label, Token True] [Label label, Token True]
 
 
+withSessionT lib slotId f = do
+  withSession lib slotId False $ \sess -> do
+    login sess User (BU8.fromString "123abc_")
+    f sess
 
-main = do
-    lib <- loadLibrary "/usr/local/Cellar/softhsm/2.3.0/lib/softhsm/libsofthsm2.so"
+
+testAesExtractableKeyGeneration lib slotId = do
+  withSessionT lib slotId $ \sess -> do
+    aesKeyHandle <- generateKey (simpleMech AesKeyGen) [ValueLen 16, P.Label "testaeskey", Extractable True] sess
+    let clearText = BS.pack [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    encData <- encrypt (simpleMech AesEcb) aesKeyHandle clearText Nothing
+    decData <- decrypt (simpleMech AesEcb) aesKeyHandle encData Nothing
+    assertEqual "Decrypted data does not match original" clearText decData
+
+
+
+oldtest lib slotId = do
     info <- getInfo lib
     putStrLn(show info)
     allSlotsNum <- getSlotNum lib False
     putStrLn("total number of slots: " ++ show allSlotsNum)
     slots <- getSlotList lib True 2
     putStrLn("slots: " ++ show slots)
-    let slotId = head slots
 
     putStrLn "getSlotInfo"
     slotInfo <- getSlotInfo lib slotId
@@ -67,7 +81,7 @@ main = do
         putStrLn $ show sessInfo
         login sess User (BU8.fromString "123abc_")
         putStrLn "generate key"
-        aesKeyHandle <- generateKey (simpleMech AesKeyGen) [ValueLen 16, Token True, Label "testaeskey", Extractable True] sess
+        aesKeyHandle <- generateKey (simpleMech AesKeyGen) [ValueLen 16, Token True, P.Label "testaeskey", Extractable True] sess
         putStrLn $ "generated key " ++ (show aesKeyHandle)
         putStrLn "encryption"
         encryptInit (simpleMech AesEcb) aesKeyHandle
@@ -77,7 +91,7 @@ main = do
         decData <- decrypt (simpleMech AesEcb) aesKeyHandle (BSL.toStrict encData) Nothing
         putStrLn $ show decData
         putStrLn "generating key pair"
-        (pubKeyHandle, privKeyHandle) <- generateKeyPair (simpleMech RsaPkcsKeyPairGen) [ModulusBits 2048, Token True, Label "key"] [Token True, Label "key"] sess
+        (pubKeyHandle, privKeyHandle) <- generateKeyPair (simpleMech RsaPkcsKeyPairGen) [ModulusBits 2048, Token True, P.Label "key"] [Token True, P.Label "key"] sess
         putStrLn $ "generated " ++ (show pubKeyHandle) ++ " and " ++ (show privKeyHandle)
         putStrLn "wrap key"
         wrappedAesKey <- wrapKey (simpleMech RsaPkcs) pubKeyHandle aesKeyHandle Nothing
@@ -150,7 +164,7 @@ main = do
     withSession lib slotId False $ \sess -> do
         putStrLn "token login"
         login sess User (BU8.fromString "123abc_")
-        objects <- findObjects sess [Class PrivateKey, Label "key"]
+        objects <- findObjects sess [Class PrivateKey, P.Label "key"]
         putStrLn $ show objects
         let objId = head objects
         getTokenFlag objId
@@ -191,4 +205,17 @@ main = do
         putStrLn $ show decAes
         logout sess
 
-    releaseLibrary lib
+
+main = do
+  putStrLn "Loading PKCS11 library"
+  lib <- loadLibrary "/usr/local/Cellar/softhsm/2.3.0/lib/softhsm/libsofthsm2.so"
+  allSlotsNum <- getSlotNum lib True
+  slots <- getSlotList lib True (fromIntegral allSlotsNum)
+  let slotId = head slots
+  putStrLn $ "using slot with id: " ++ show slotId
+  let tests = TestList [
+                        "Test AES key generation and encryption" ~: TestCase (testAesExtractableKeyGeneration lib slotId),
+                        TestCase (oldtest lib slotId)
+                       ]
+  runTestTT tests
+  releaseLibrary lib
