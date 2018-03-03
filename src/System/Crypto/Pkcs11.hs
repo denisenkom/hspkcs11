@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 -- | This is the main module that contains bindings for PKCS#11 interface.
 module System.Crypto.Pkcs11
   (
@@ -135,7 +136,18 @@ import Foreign.Marshal.Array
 import Foreign.Marshal.Utils
 import Foreign.Ptr
 import Foreign.Storable
+#if defined(mingw32_HOST_OS)
+import qualified System.Win32.DLL as DLL
+import qualified System.Win32.Types
+type DL = System.Win32.Types.HINSTANCE
+dlclose = DLL.freeLibrary
+dlopen path _ = DLL.loadLibrary path
+dlsym lib fname = do
+  addr <- DLL.getProcAddress lib fname
+  return $ castPtrToFunPtr addr
+#else
 import System.Posix.DynamicLinker
+#endif
 
 -- | Represents a PKCS#11 library.
 data Library = Library
