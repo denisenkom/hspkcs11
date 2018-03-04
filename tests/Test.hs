@@ -20,12 +20,12 @@ import Test.HUnit
 --         generateKeyPair sess RsaPkcsKeyPairGen [ModulusBits 2048, Label label, Token True] [Label label, Token True]
 defaultPin = BU8.fromString "123abc_"
 
-withSessionT lib slotId f = do
+withSessionT lib slotId f =
   withSession False lib slotId $ \sess -> do
     login sess User defaultPin
     f sess
 
-testAesExtractableKeyGeneration lib slotId = do
+testAesExtractableKeyGeneration lib slotId =
   withSessionT lib slotId $ \sess -> do
     aesKeyHandle <- generateKey (simpleMech AesKeyGen) [ValueLen 16, P.Label "testaeskey", Extractable True] sess
     let clearText = BS.pack [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -35,22 +35,22 @@ testAesExtractableKeyGeneration lib slotId = do
 
 oldtest lib slotId = do
   info <- getInfo lib
-  putStrLn (show info)
+  print info
   allSlotsNum <- getSlotNum lib False
   putStrLn ("total number of slots: " ++ show allSlotsNum)
   slots <- getSlotList lib True 2
   putStrLn ("slots: " ++ show slots)
   putStrLn "getSlotInfo"
   slotInfo <- getSlotInfo lib slotId
-  putStrLn (show slotInfo)
+  print slotInfo
   putStrLn "getTokenInfo"
   tokenInfo <- getTokenInfo lib slotId
-  putStrLn (show tokenInfo)
+  print tokenInfo
   putStrLn "getMechanismList"
   mechanisms <- getMechanismList lib slotId 100
-  putStrLn $ show mechanisms
+  print mechanisms
   mechInfo <- getMechanismInfo lib slotId RsaPkcsKeyPairGen
-  putStrLn $ show mechInfo
+  print mechInfo
     --putStrLn "generating key"
     --(pubKeyHandle, privKeyHandle) <- generateKey lib defaultPin "key"
     --putStrLn (show pubKeyHandle)
@@ -66,19 +66,19 @@ oldtest lib slotId = do
     setPin sess "testpin" defaultPin
     putStrLn "getSessionInfo"
     sessInfo <- getSessionInfo sess
-    putStrLn $ show sessInfo
+    print sessInfo
     login sess User defaultPin
     putStrLn "generate key"
     aesKeyHandle <-
       generateKey (simpleMech AesKeyGen) [ValueLen 16, Token True, P.Label "testaeskey", Extractable True] sess
-    putStrLn $ "generated key " ++ (show aesKeyHandle)
+    putStrLn $ "generated key " ++ show aesKeyHandle
     putStrLn "encryption"
     encryptInit (simpleMech AesEcb) aesKeyHandle
     encData <- PL.encrypt sess (BSL.pack [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-    putStrLn $ show encData
+    print encData
     putStrLn "decryption"
     decData <- decrypt (simpleMech AesEcb) aesKeyHandle (BSL.toStrict encData) Nothing
-    putStrLn $ show decData
+    print decData
     putStrLn "generating key pair"
     (pubKeyHandle, privKeyHandle) <-
       generateKeyPair
@@ -86,50 +86,50 @@ oldtest lib slotId = do
         [ModulusBits 2048, Token True, P.Label "key"]
         [Token True, P.Label "key"]
         sess
-    putStrLn $ "generated " ++ (show pubKeyHandle) ++ " and " ++ (show privKeyHandle)
+    putStrLn $ "generated " ++ show pubKeyHandle ++ " and " ++ show privKeyHandle
     putStrLn "wrap key"
     wrappedAesKey <- wrapKey (simpleMech RsaPkcs) pubKeyHandle aesKeyHandle Nothing
-    putStrLn $ show wrappedAesKey
+    print wrappedAesKey
     putStrLn "unwrap key"
     unwrappedAesKey <- unwrapKey (simpleMech RsaPkcs) privKeyHandle wrappedAesKey [Class SecretKey, KeyType AES]
     putStrLn "sign"
     let signedData = BS.pack [0, 0, 0, 0]
     signature <- sign (simpleMech RsaPkcs) privKeyHandle signedData Nothing
-    putStrLn $ show signature
+    print signature
         --putStrLn "get operation state"
         --operState <- getOperationState sess 1000
         --putStrLn $ show operState
     putStrLn "verify"
     verRes <- verify (simpleMech RsaPkcs) pubKeyHandle signedData signature
-    putStrLn $ "verify result " ++ (show verRes)
+    putStrLn $ "verify result " ++ show verRes
         --putStrLn "signRecoverInit"
         --signRecoverInit (simpleMech Rsa9796) sess privKeyHandle
     putStrLn "seedRandom"
     seedRandom sess signedData
     putStrLn "generateRandom"
     randData <- generateRandom sess 10
-    putStrLn $ show randData
+    print randData
     putStrLn "set attributes"
     setAttributes aesKeyHandle [Extractable False]
     putStrLn "get object size"
     aesKeySize <- getObjectSize aesKeyHandle
-    putStrLn $ show $ fromIntegral aesKeySize
+    print (fromIntegral aesKeySize)
     putStrLn "copy object"
     copiedObjHandle <- copyObject aesKeyHandle []
-    putStrLn $ show copiedObjHandle
+    print copiedObjHandle
     putStrLn "deleting object"
     destroyObject aesKeyHandle
     putStrLn "digest"
     digestedData <- digest (simpleMech Sha256) sess (BS.replicate 16 0) Nothing
-    putStrLn $ show digestedData
+    print digestedData
     putStrLn "create object"
     createdAesKey <- createObject sess [Class SecretKey, KeyType AES, Value (BS.replicate 16 0)]
-    putStrLn $ show createdAesKey
+    print createdAesKey
     putStrLn "generate DH domain parameters"
     dhParamsHandle <- generateKey (simpleMech DhPkcsParameterGen) [PrimeBits 512] sess
     dhPrime <- getPrime dhParamsHandle
     dhBase <- getBase dhParamsHandle
-    putStrLn $ "generated DH prime=" ++ (show dhPrime) ++ " base=" ++ (show dhBase)
+    putStrLn $ "generated DH prime=" ++ show dhPrime ++ " base=" ++ show dhBase
         --putStrLn "generate DH PKCS key pair"
         --(pubKeyHandle, privKeyHandle) <- generateKeyPair sess (simpleMech DhPkcsKeyPairGen) [Prime dhPrime, Base dhBase] []
         --putStrLn $ "generated key " ++ (show pubKeyHandle)
@@ -140,13 +140,13 @@ oldtest lib slotId = do
       generateKeyPair (simpleMech EcKeyPairGen) [EcParams (B64.decodeLenient "BggqhkjOPQMBBw==")] [] sess
     derEcPoint <- getEcPoint ecPubKey
     derEcParams <- getEcdsaParams ecPubKey
-    putStrLn $ "EC point DER=" ++ (show $ B64.encode derEcPoint) ++ " params DER=" ++ (show $ B64.encode derEcParams)
+    putStrLn $ "EC point DER=" ++ show (B64.encode derEcPoint) ++ " params DER=" ++ show (B64.encode derEcParams)
     putStrLn "signing with ECDSA"
     ecSignature <- sign (simpleMech Ecdsa) ecPrivKey signedData Nothing
-    putStrLn $ show ecSignature
+    print ecSignature
     putStrLn "verifying signature"
     ecVerifyRes <- verify (simpleMech Ecdsa) ecPubKey signedData ecSignature
-    putStrLn $ show ecVerifyRes
+    print ecVerifyRes
   putStrLn "close all sessions"
   closeAllSessions lib slotId
   putStrLn "open read-only session"
@@ -154,7 +154,7 @@ oldtest lib slotId = do
     putStrLn "token login"
     login sess User defaultPin
     objects <- findObjects sess [Class PrivateKey, P.Label "key"]
-    putStrLn $ show objects
+    print objects
     let objId = head objects
     getTokenFlag objId
     getPrivateFlag objId
@@ -166,8 +166,8 @@ oldtest lib slotId = do
     signFlag <- getSignFlag objId
     mod <- getModulus objId
     pubExp <- getPublicExponent objId
-    putStrLn $ show decryptFlag
-    putStrLn $ show signFlag
+    print decryptFlag
+    print signFlag
     putStrLn $ showHex mod ""
     putStrLn $ showHex pubExp ""
     rng <- newGenIO :: IO SystemRandom
@@ -185,10 +185,10 @@ oldtest lib slotId = do
         encryptedMessage = AESmod.encryptECB aesKey "hello00000000000"
         -- test decryption using RSA key
     dec <- decrypt (simpleMech RsaPkcs) objId (BSL.toStrict encKey) Nothing
-    putStrLn $ show dec
+    print dec
         -- test decryption using AES key
     decAes <- decrypt (simpleMech AesEcb) unwrappedKey encryptedMessage Nothing
-    putStrLn $ show decAes
+    print decAes
     logout sess
 
 main = do
