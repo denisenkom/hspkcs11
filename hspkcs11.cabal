@@ -28,6 +28,7 @@ library
         System.Crypto.Pkcs11
         System.Crypto.Pkcs11.Lazy
         Bindings.Pkcs11
+        Bindings.Pkcs11.Attribs
     Default-language:  Haskell2010
 
 test-suite pkcs11-tests

@@ -468,27 +468,6 @@ rvToStr rv = "unknown value for error " ++ (show rv)
     CKA_VENDOR_DEFINED     as VendorDefinedType
     } deriving (Show, Eq) #}
 
--- | Represents an attribute of an object
-data Attribute = Class ClassType -- ^ class of an object, e.g. 'PrivateKey', 'SecretKey'
-    | KeyType KeyTypeValue -- ^ e.g. 'RSA' or 'AES'
-    | Label String -- ^ object's label
-    | Token Bool -- ^ whether object is stored on the token or is a temporary session object
-    | Decrypt Bool -- ^ allow/deny encryption function for an object
-    | Sign Bool -- ^ allow/deny signing function for an object
-    | ModulusBits Int -- ^ number of bits used by modulus, for example in RSA public key
-    | Modulus Integer -- ^ modulus value, used by RSA keys
-    | PublicExponent Integer -- ^ value of public exponent, used by RSA public keys
-    | PrimeBits Int -- ^ number of bits used by prime in classic Diffie-Hellman
-    | Prime Integer -- ^ value of prime modulus, used in classic Diffie-Hellman
-    | Base Integer -- ^ value of generator, used in classic Diffie-Hellman
-    | ValueLen Int -- ^ length in bytes of the corresponding 'Value' attribute
-    | Value BS.ByteString -- ^ object's value attribute, for example it is a DER encoded certificate for certificate objects
-    | Extractable Bool -- ^ allows or denys extraction of certain attributes of private keys
-    | EcParams BS.ByteString -- ^ DER encoded ANSI X9.62 parameters value for elliptic-curve algorithm
-    | EcdsaParams BS.ByteString -- ^ DER encoded ANSI X9.62 parameters value for elliptic-curve algorithm
-    | EcPoint BS.ByteString -- ^ DER encoded ANSI X9.62 point for elliptic-curve algorithm
-    deriving (Show)
-
 data LlAttribute = LlAttribute {
     attributeType :: AttributeType,
     attributeValuePtr :: Ptr (),
