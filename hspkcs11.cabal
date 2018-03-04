@@ -26,6 +26,7 @@ library
     Include-dirs: include
     exposed-modules:
         System.Crypto.Pkcs11
+        System.Crypto.Pkcs11.Attribs
         System.Crypto.Pkcs11.Lazy
         Bindings.Pkcs11
         Bindings.Pkcs11.Attribs

@@ -10,6 +10,7 @@ import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.UTF8 as BU8
 import Numeric
 import System.Crypto.Pkcs11 as P
+import System.Crypto.Pkcs11.Attribs as A
 import qualified System.Crypto.Pkcs11.Lazy as PL
 import Test.HUnit
 
@@ -27,7 +28,7 @@ withSessionT lib slotId f =
 
 testAesExtractableKeyGeneration lib slotId =
   withSessionT lib slotId $ \sess -> do
-    aesKeyHandle <- generateKey (simpleMech AesKeyGen) [ValueLen 16, P.Label "testaeskey", Extractable True] sess
+    aesKeyHandle <- generateKey (simpleMech AesKeyGen) [ValueLen 16, A.Label "testaeskey", Extractable True] sess
     let clearText = BS.pack [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     encData <- encrypt (simpleMech AesEcb) aesKeyHandle clearText Nothing
     decData <- decrypt (simpleMech AesEcb) aesKeyHandle encData Nothing
@@ -70,7 +71,7 @@ oldtest lib slotId = do
     login sess User defaultPin
     putStrLn "generate key"
     aesKeyHandle <-
-      generateKey (simpleMech AesKeyGen) [ValueLen 16, Token True, P.Label "testaeskey", Extractable True] sess
+      generateKey (simpleMech AesKeyGen) [ValueLen 16, Token True, A.Label "testaeskey", Extractable True] sess
     putStrLn $ "generated key " ++ show aesKeyHandle
     putStrLn "encryption"
     encryptInit (simpleMech AesEcb) aesKeyHandle
@@ -83,8 +84,8 @@ oldtest lib slotId = do
     (pubKeyHandle, privKeyHandle) <-
       generateKeyPair
         (simpleMech RsaPkcsKeyPairGen)
-        [ModulusBits 2048, Token True, P.Label "key"]
-        [Token True, P.Label "key"]
+        [ModulusBits 2048, Token True, A.Label "key"]
+        [Token True, A.Label "key"]
         sess
     putStrLn $ "generated " ++ show pubKeyHandle ++ " and " ++ show privKeyHandle
     putStrLn "wrap key"
@@ -153,7 +154,7 @@ oldtest lib slotId = do
   withROSession lib slotId $ \sess -> do
     putStrLn "token login"
     login sess User defaultPin
-    objects <- findObjects sess [Class PrivateKey, P.Label "key"]
+    objects <- findObjects sess [Class PrivateKey, A.Label "key"]
     print objects
     let objId = head objects
     getTokenFlag objId

@@ -14,6 +14,13 @@ import Foreign.Ptr
 import Foreign.Storable
 import Control.Monad (when)
 
+
+data Object =
+  Object FunctionListPtr
+         SessionHandle
+         ObjectHandle
+  deriving (Show)
+
 -- | Represents an attribute of an object
 data Attribute = Class ClassType -- ^ class of an object, e.g. 'PrivateKey', 'SecretKey'
     | KeyType KeyTypeValue -- ^ e.g. 'RSA' or 'AES'
@@ -177,3 +184,10 @@ getObjectAttr' functionListPtr sessionHandle objHandle attrType =
         else do
           llAttr <- peek attrPtr
           _llAttrToAttr llAttr
+
+getBoolAttr :: AttributeType -> Object -> IO Bool
+getBoolAttr attrType (Object funcListPtr sessHandle objHandle) =
+  alloca $ \valuePtr -> do
+    _getAttr funcListPtr sessHandle objHandle attrType (valuePtr :: Ptr CK_BBOOL)
+    val <- peek valuePtr
+    return $ toBool val
