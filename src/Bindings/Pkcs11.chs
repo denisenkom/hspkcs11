@@ -12,7 +12,6 @@ import Control.Exception
 import qualified Data.ByteString.UTF8 as BU8
 import qualified Data.ByteString as BS
 import Data.ByteString.Unsafe
-import Data.List
 
 #include "pkcs11import.h"
 
@@ -27,23 +26,26 @@ _rwSession = {#const CKF_RW_SESSION#} :: Int
 
 -- | Used to reference an object
 type ObjectHandle = {#type CK_OBJECT_HANDLE#}
-{#typedef CK_OBJECT_HANDLE ObjectHandle#}
-{#default in `ObjectHandle' [CK_OBJECT_HANDLE] fromIntegral#}
-{#default out `ObjectHandle' [CK_OBJECT_HANDLE] fromIntegral#}
 
 type SlotId = {#type CK_SLOT_ID#}
-{#typedef CK_SLOT_ID SlotId#}
-{#default in `SlotId' [CK_SLOT_ID] fromIntegral#}
-{#default out `SlotId' [CK_SLOT_ID] fromIntegral#}
 type Rv = {#type CK_RV#}
-{#typedef CK_RV Rv#}
-{#default out `Rv' [CK_RV] fromIntegral#}
+type CK_OBJECT_CLASS = {#type CK_OBJECT_CLASS#}
+type CK_KEY_TYPE = {#type CK_KEY_TYPE#}
 type CK_BBOOL = {#type CK_BBOOL#}
 type CK_BYTE = {#type CK_BYTE#}
 type CK_FLAGS = {#type CK_FLAGS#}
 type GetFunctionListFunPtr = {#type CK_C_GetFunctionList#}
 type NotifyFunPtr = {#type CK_NOTIFY#}
 type SessionHandle = {#type CK_SESSION_HANDLE#}
+
+{#typedef CK_OBJECT_HANDLE ObjectHandle#}
+{#default in `ObjectHandle' [CK_OBJECT_HANDLE] fromIntegral#}
+{#default out `ObjectHandle' [CK_OBJECT_HANDLE] fromIntegral#}
+{#typedef CK_SLOT_ID SlotId#}
+{#default in `SlotId' [CK_SLOT_ID] fromIntegral#}
+{#default out `SlotId' [CK_SLOT_ID] fromIntegral#}
+{#typedef CK_RV Rv#}
+{#default out `Rv' [CK_RV] fromIntegral#}
 {#typedef CK_SESSION_HANDLE SessionHandle#}
 {#default in `SessionHandle' [CK_SESSION_HANDLE] fromIntegral#}
 {#default out `SessionHandle' [CK_SESSION_HANDLE] fromIntegral#}
@@ -246,116 +248,6 @@ instance Storable SessionInfo where
         error "not implemented"
 
 
-{#fun unsafe CK_FUNCTION_LIST.C_Initialize as initialize
- {`FunctionListPtr',
-  alloca- `()' } -> `Rv'
-#}
-
-{#fun unsafe CK_FUNCTION_LIST.C_GetInfo as getInfo'
- {`FunctionListPtr',
-  alloca- `LibraryInfo' peek* } -> `Rv'
-#}
-
-{#fun unsafe CK_FUNCTION_LIST.C_GetSlotList as getSlotList'
- {`FunctionListPtr',
-  `Bool',
-  castPtr `Ptr SlotId',
-  `CULong' peek*} -> `Rv'
-#}
-
-
-initToken' :: FunctionListPtr -> SlotId -> BU8.ByteString -> String -> IO (Rv)
-initToken' funcListPtr slotId pin label = do
-    unsafeUseAsCStringLen pin $ \(pinPtr, pinLen) -> do
-        allocaArray 32 $ \labelArray -> do
-            pokeArray labelArray (map CUChar (BS.unpack $ BU8.fromString label))
-            res <- {#call unsafe CK_FUNCTION_LIST.C_InitToken#} funcListPtr (fromIntegral slotId) (castPtr pinPtr) (fromIntegral pinLen) labelArray
-            return (fromIntegral res)
-
-
-initPin' :: FunctionListPtr -> CULong -> BU8.ByteString -> IO (Rv)
-initPin' funcListPtr sessHandle pin = do
-    unsafeUseAsCStringLen pin $ \(pinPtr, pinLen) -> do
-        res <- {#call unsafe CK_FUNCTION_LIST.C_InitPIN#} funcListPtr sessHandle (castPtr pinPtr) (fromIntegral pinLen)
-        return (fromIntegral res)
-
-
-setPin' :: FunctionListPtr -> CULong -> BU8.ByteString -> BU8.ByteString -> IO (Rv)
-setPin' funcListPtr sessHandle oldPin newPin = do
-    unsafeUseAsCStringLen oldPin $ \(oldPinPtr, oldPinLen) -> do
-        unsafeUseAsCStringLen newPin $ \(newPinPtr, newPinLen) -> do
-            res <- {#call unsafe CK_FUNCTION_LIST.C_SetPIN#} funcListPtr sessHandle (castPtr oldPinPtr)
-                (fromIntegral oldPinLen) (castPtr newPinPtr) (fromIntegral newPinLen)
-            return (fromIntegral res)
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_GetSessionInfo as getSessionInfo'
-  {`FunctionListPtr',
-   `SessionHandle',
-   alloca- `SessionInfo' peek* } -> `Rv'
-#}
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_GetSlotInfo as getSlotInfo'
-  {`FunctionListPtr',
-   `SlotId',
-   alloca- `SlotInfo' peek* } -> `Rv'
-#}
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_GetTokenInfo as getTokenInfo'
-  {`FunctionListPtr',
-   `SlotId',
-   alloca- `TokenInfo' peek* } -> `Rv'
-#}
-
-
-openSession' functionListPtr slotId flags =
-  alloca $ \slotIdPtr -> do
-    res <- {#call unsafe CK_FUNCTION_LIST.C_OpenSession#} functionListPtr (fromIntegral slotId) (fromIntegral flags) nullPtr nullFunPtr slotIdPtr
-    slotId <- peek slotIdPtr
-    return (fromIntegral res, fromIntegral slotId)
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_CloseSession as closeSession'
- {`FunctionListPtr',
-  `SessionHandle' } -> `Rv'
-#}
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_CloseAllSessions as closeAllSessions'
- {`FunctionListPtr',
-  `SlotId' } -> `Rv' fromIntegral#}
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_Finalize as finalize
- {`FunctionListPtr',
-  alloca- `()' } -> `Rv'
-#}
-
-{#fun unsafe CK_FUNCTION_LIST.C_FindObjectsInit as findObjectsInit'
- {`FunctionListPtr',
-  `SessionHandle',
-  `LlAttributePtr',
-  `CULong'} -> `Rv'
-#}
-
-
-findObjects' functionListPtr session maxObjects = do
-  alloca $ \arrayLenPtr -> do
-    poke arrayLenPtr (fromIntegral 0)
-    allocaArray maxObjects $ \array -> do
-      res <- {#call unsafe CK_FUNCTION_LIST.C_FindObjects#} functionListPtr session array (fromIntegral maxObjects) arrayLenPtr
-      arrayLen <- peek arrayLenPtr
-      objectHandles <- peekArray (fromIntegral arrayLen) array
-      return (fromIntegral res, objectHandles)
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_FindObjectsFinal as findObjectsFinal'
- {`FunctionListPtr',
-  `CULong' } -> `Rv'
-#}
-
 
 {#enum define UserType {CKU_USER as User, CKU_SO as SecurityOfficer, CKU_CONTEXT_SPECIFIC as ContextSpecific} deriving (Eq) #}
 
@@ -366,78 +258,6 @@ findObjects' functionListPtr session maxObjects = do
     CKS_RW_USER_FUNCTIONS as RWUserFunctions,
     CKS_RW_SO_FUNCTIONS as RWSOFunctions
     } deriving (Eq,Show)
-#}
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_GetOperationState as getOperationState'
- {`FunctionListPtr',
-  `SessionHandle',
-  castPtr `Ptr CUChar',
-  `CULong' peek*} ->  `Rv'
-#}
-
-
-_login :: FunctionListPtr -> SessionHandle -> UserType -> BU8.ByteString -> IO (Rv)
-_login functionListPtr session userType pin = do
-    unsafeUseAsCStringLen pin $ \(pinPtr, pinLen) -> do
-        res <- {#call unsafe CK_FUNCTION_LIST.C_Login#} functionListPtr session (fromIntegral $ fromEnum userType) (castPtr pinPtr) (fromIntegral pinLen)
-        return (fromIntegral res)
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_Logout as logout'
- {`FunctionListPtr',
-  `SessionHandle'} ->  `Rv'
-#}
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_DestroyObject as destroyObject'
- {`FunctionListPtr',
-  `SessionHandle',
-  `ObjectHandle'} ->  `Rv'
-#}
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_GenerateKey as generateKey'
- {`FunctionListPtr',
-  `SessionHandle',
-  with* `Mech',
-  `LlAttributePtr',
-  `CULong',
-  alloca- `ObjectHandle' peek*} -> `Rv'
-#}
-
-
-_generateKeyPair :: FunctionListPtr
-                 -> SessionHandle
-                 -> Mech
-                 -> [Attribute]
-                 -> [Attribute]
-                 -> IO (Rv, ObjectHandle, ObjectHandle)
-_generateKeyPair functionListPtr session mech pubAttrs privAttrs = do
-    alloca $ \pubKeyHandlePtr -> do
-        alloca $ \privKeyHandlePtr -> do
-            with mech $ \mechPtr -> do
-                _withAttribs pubAttrs $ \pubAttrsPtr -> do
-                    _withAttribs privAttrs $ \privAttrsPtr -> do
-                        res <- {#call unsafe CK_FUNCTION_LIST.C_GenerateKeyPair#} functionListPtr session mechPtr pubAttrsPtr (fromIntegral $ length pubAttrs) privAttrsPtr (fromIntegral $ length privAttrs) pubKeyHandlePtr privKeyHandlePtr
-                        pubKeyHandle <- peek pubKeyHandlePtr
-                        privKeyHandle <- peek privKeyHandlePtr
-                        return (fromIntegral res, fromIntegral pubKeyHandle, fromIntegral privKeyHandle)
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_GetMechanismList as getMechanismList'
-  {`FunctionListPtr',
-   `SlotId',
-   castPtr `Ptr CUChar',
-   `CULong' peek*} -> `Rv'
-#}
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_GetMechanismInfo as _getMechanismInfo
-  {`FunctionListPtr',
-   `SlotId',
-   `Int',
-   alloca- `MechInfo' peek* } -> `Rv'
 #}
 
 
@@ -688,209 +508,6 @@ instance Storable LlAttribute where
         valSize <- peek (p `plusPtr` ({#sizeof CK_ATTRIBUTE_TYPE#} + {#sizeof CK_VOID_PTR#}))
         return $ LlAttribute (toEnum $ fromIntegral attrType) valPtr valSize
 
-
-_attrType :: Attribute -> AttributeType
-_attrType (Class _) = ClassType
-_attrType (KeyType _) = KeyTypeType
-_attrType (Label _) = LabelType
-_attrType (ModulusBits _) = ModulusBitsType
-_attrType (PrimeBits _) = PrimeBitsType
-_attrType (Token _) = TokenType
-_attrType (ValueLen _) = ValueLenType
-_attrType (Extractable _) = ExtractableType
-_attrType (Value _) = ValueType
-_attrType (Prime _) = PrimeType
-_attrType (Base _) = BaseType
-_attrType (EcParams _) = EcParamsType
-_attrType (EcPoint _) = EcPointType
-
-
-_valueSize :: Attribute -> Int
-_valueSize (Class _) = {#sizeof CK_OBJECT_CLASS#}
-_valueSize (KeyType _) = {#sizeof CK_KEY_TYPE#}
-_valueSize (Label l) = BU8.length $ BU8.fromString l
-_valueSize (ModulusBits _) = {#sizeof CK_ULONG#}
-_valueSize (PrimeBits _) = {#sizeof CK_ULONG#}
-_valueSize (Token _) = {#sizeof CK_BBOOL#}
-_valueSize (ValueLen _) = {#sizeof CK_ULONG#}
-_valueSize (Extractable _) = {#sizeof CK_BBOOL#}
-_valueSize (Value bs) = BS.length bs
-_valueSize (Prime p) = _bigIntLen p
-_valueSize (Base b) = _bigIntLen b
-_valueSize (EcParams bs) = BS.length bs
-_valueSize (EcPoint bs) = BS.length bs
-
-
-_pokeValue :: Attribute -> Ptr () -> IO ()
-_pokeValue (Class c) ptr = poke (castPtr ptr :: Ptr {#type CK_OBJECT_CLASS#}) (fromIntegral $ fromEnum c)
-_pokeValue (KeyType k) ptr = poke (castPtr ptr :: Ptr {#type CK_KEY_TYPE#}) (fromIntegral $ fromEnum k)
-_pokeValue (Label l) ptr = unsafeUseAsCStringLen (BU8.fromString l) $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
-_pokeValue (ModulusBits l) ptr = poke (castPtr ptr :: Ptr {#type CK_ULONG#}) (fromIntegral l)
-_pokeValue (PrimeBits l) ptr = poke (castPtr ptr :: Ptr {#type CK_ULONG#}) (fromIntegral l)
-_pokeValue (Token b) ptr = poke (castPtr ptr :: Ptr {#type CK_BBOOL#}) (fromBool b :: {#type CK_BBOOL#})
-_pokeValue (ValueLen l) ptr = poke (castPtr ptr :: Ptr {#type CK_ULONG#}) (fromIntegral l :: {#type CK_ULONG#})
-_pokeValue (Extractable b) ptr = poke (castPtr ptr :: Ptr {#type CK_BBOOL#}) (fromBool b :: {#type CK_BBOOL#})
-_pokeValue (Value bs) ptr = unsafeUseAsCStringLen bs $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
-_pokeValue (Prime p) ptr = _pokeBigInt p (castPtr ptr)
-_pokeValue (Base b) ptr = _pokeBigInt b (castPtr ptr)
-_pokeValue (EcParams bs) ptr = unsafeUseAsCStringLen bs $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
-_pokeValue (EcPoint bs) ptr = unsafeUseAsCStringLen bs $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
-
-
-_pokeValues :: [Attribute] -> Ptr () -> IO ()
-_pokeValues [] p = return ()
-_pokeValues (a:rem) p = do
-    _pokeValue a p
-    _pokeValues rem (p `plusPtr` (_valueSize a))
-
-
-_valuesSize :: [Attribute] -> Int
-_valuesSize attribs = foldr (+) 0 (map (_valueSize) attribs)
-
-
-_makeLowLevelAttrs :: [Attribute] -> Ptr () -> [LlAttribute]
-_makeLowLevelAttrs [] valuePtr = []
-_makeLowLevelAttrs (a:rem) valuePtr =
-    let valuePtr' = valuePtr `plusPtr` (_valueSize a)
-        llAttr = LlAttribute {attributeType=_attrType a, attributeValuePtr=valuePtr, attributeSize=(fromIntegral $ _valueSize a)}
-    in
-        llAttr:(_makeLowLevelAttrs rem valuePtr')
-
-
-_withAttribs :: [Attribute] -> (Ptr LlAttribute -> IO a) -> IO a
-_withAttribs attribs f = do
-    allocaBytes (_valuesSize attribs) $ \valuesPtr -> do
-        _pokeValues attribs valuesPtr
-        allocaArray (length attribs) $ \attrsPtr -> do
-            pokeArray attrsPtr (_makeLowLevelAttrs attribs valuesPtr)
-            f attrsPtr
-
-
--- from http://hackage.haskell.org/package/binary-0.5.0.2/docs/src/Data-Binary.html#unroll
-unroll :: Integer -> [Word8]
-unroll = unfoldr step
-  where
-    step 0 = Nothing
-    step i = Just (fromIntegral i, i `shiftR` 8)
-
-
-_bigIntLen i = length $ unroll i
-
-
-_pokeBigInt i ptr = pokeArray ptr (unroll i)
-
-
-_peekBigInt :: Ptr () -> CULong -> IO Integer
-_peekBigInt ptr len = do
-    arr <- peekArray (fromIntegral len) (castPtr ptr :: Ptr Word8)
-    return $ foldl (\acc v -> (fromIntegral v) + (acc * 256)) 0 arr
-
-
-_llAttrToAttr :: LlAttribute -> IO Attribute
-_llAttrToAttr (LlAttribute ClassType ptr len) = do
-    val <- peek (castPtr ptr :: Ptr {#type CK_OBJECT_CLASS#})
-    return (Class $ toEnum $ fromIntegral val)
-_llAttrToAttr (LlAttribute ModulusType ptr len) = do
-    val <- _peekBigInt ptr len
-    return (Modulus val)
-_llAttrToAttr (LlAttribute PublicExponentType ptr len) = do
-    val <- _peekBigInt ptr len
-    return (PublicExponent val)
-_llAttrToAttr (LlAttribute PrimeType ptr len) = do
-    val <- _peekBigInt ptr len
-    return (Prime val)
-_llAttrToAttr (LlAttribute BaseType ptr len) = do
-    val <- _peekBigInt ptr len
-    return (Base val)
-_llAttrToAttr (LlAttribute DecryptType ptr len) = do
-    val <- peek (castPtr ptr :: Ptr {#type CK_BBOOL#})
-    return $ Decrypt(val /= 0)
-_llAttrToAttr (LlAttribute SignType ptr len) = do
-    val <- peek (castPtr ptr :: Ptr {#type CK_BBOOL#})
-    return $ Sign(val /= 0)
-_llAttrToAttr (LlAttribute EcParamsType ptr len) = do
-    val <- BS.packCStringLen (castPtr ptr, fromIntegral len)
-    return $ EcParams val
-_llAttrToAttr (LlAttribute EcdsaParamsType ptr len) = do
-    val <- BS.packCStringLen (castPtr ptr, fromIntegral len)
-    return $ EcdsaParams val
-_llAttrToAttr (LlAttribute EcPointType ptr len) = do
-    val <- BS.packCStringLen (castPtr ptr, fromIntegral len)
-    return $ EcPoint val
-_llAttrToAttr (LlAttribute typ _ _) = error("_llAttrToAttr needs to be implemented for " ++ (show typ))
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_DeriveKey as deriveKey'
- {`FunctionListPtr',
-  `SessionHandle',
-  with* `Mech',
-  `ObjectHandle',
-  `LlAttributePtr',
-  `CULong',
-  alloca- `ObjectHandle' peek*} -> `Rv'
-#}
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_CreateObject as createObject'
- {`FunctionListPtr',
-  `SessionHandle',
-  `LlAttributePtr',
-  `CULong',
-  alloca- `ObjectHandle' peek*} -> `Rv'
-#}
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_CopyObject as copyObject'
- {`FunctionListPtr',
-  `SessionHandle',
-  `ObjectHandle',
-  `LlAttributePtr',
-  `CULong',
-  alloca- `ObjectHandle' peek*} -> `Rv'
-#}
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_GetObjectSize as getObjectSize'
- {`FunctionListPtr',
-  `SessionHandle',
-  `ObjectHandle',
-  alloca- `CULong' peek*} -> `Rv'
-#}
-
-
-_getAttr :: FunctionListPtr -> SessionHandle -> ObjectHandle -> AttributeType -> Ptr x -> IO ()
-_getAttr functionListPtr sessionHandle objHandle attrType valPtr = do
-    alloca $ \attrPtr -> do
-        poke attrPtr (LlAttribute attrType (castPtr valPtr) (fromIntegral $ sizeOf valPtr))
-        rv <- {#call unsafe CK_FUNCTION_LIST.C_GetAttributeValue#} functionListPtr sessionHandle objHandle attrPtr 1
-        if rv /= 0
-            then fail $ "failed to get attribute: " ++ (rvToStr rv)
-            else return ()
-
-
-getObjectAttr' :: FunctionListPtr -> SessionHandle -> ObjectHandle -> AttributeType -> IO Attribute
-getObjectAttr' functionListPtr sessionHandle objHandle attrType = do
-    alloca $ \attrPtr -> do
-        poke attrPtr (LlAttribute attrType nullPtr 0)
-        rv <- {#call unsafe CK_FUNCTION_LIST.C_GetAttributeValue#} functionListPtr sessionHandle objHandle attrPtr 1
-        attrWithLen <- peek attrPtr
-        allocaBytes (fromIntegral $ attributeSize attrWithLen) $ \attrVal -> do
-            poke attrPtr (LlAttribute attrType attrVal (attributeSize attrWithLen))
-            rv <- {#call unsafe CK_FUNCTION_LIST.C_GetAttributeValue#} functionListPtr sessionHandle objHandle attrPtr 1
-            if rv /= 0
-                then fail $ "failed to get attribute: " ++ (rvToStr rv)
-                else do
-                    llAttr <- peek attrPtr
-                    _llAttrToAttr llAttr
-
-
-{#fun unsafe CK_FUNCTION_LIST.C_SetAttributeValue as setAttributeValue'
- {`FunctionListPtr',
-  `SessionHandle',
-  `ObjectHandle',
-  `LlAttributePtr',
-  `CULong'} -> `Rv'
-#}
 
 {#enum define MechType {
     CKM_RSA_PKCS_KEY_PAIR_GEN as RsaPkcsKeyPairGen,
@@ -1249,6 +866,214 @@ getObjectAttr' functionListPtr sessionHandle objHandle attrType = do
     } deriving (Eq,Show) #}
 
 
+{#fun unsafe CK_FUNCTION_LIST.C_Initialize as initialize
+ {`FunctionListPtr',
+  alloca- `()' } -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_GetInfo as getInfo'
+ {`FunctionListPtr',
+  alloca- `LibraryInfo' peek* } -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_GetSlotList as getSlotList'
+ {`FunctionListPtr',
+  `Bool',
+  castPtr `Ptr SlotId',
+  `CULong' peek*} -> `Rv'
+#}
+
+initToken' :: FunctionListPtr -> SlotId -> BU8.ByteString -> String -> IO (Rv)
+initToken' funcListPtr slotId pin label = do
+    unsafeUseAsCStringLen pin $ \(pinPtr, pinLen) -> do
+        allocaArray 32 $ \labelArray -> do
+            pokeArray labelArray (map CUChar (BS.unpack $ BU8.fromString label))
+            res <- {#call unsafe CK_FUNCTION_LIST.C_InitToken#} funcListPtr (fromIntegral slotId) (castPtr pinPtr) (fromIntegral pinLen) labelArray
+            return (fromIntegral res)
+
+initPin' :: FunctionListPtr -> CULong -> BU8.ByteString -> IO (Rv)
+initPin' funcListPtr sessHandle pin = do
+    unsafeUseAsCStringLen pin $ \(pinPtr, pinLen) -> do
+        res <- {#call unsafe CK_FUNCTION_LIST.C_InitPIN#} funcListPtr sessHandle (castPtr pinPtr) (fromIntegral pinLen)
+        return (fromIntegral res)
+
+setPin' :: FunctionListPtr -> CULong -> BU8.ByteString -> BU8.ByteString -> IO (Rv)
+setPin' funcListPtr sessHandle oldPin newPin = do
+    unsafeUseAsCStringLen oldPin $ \(oldPinPtr, oldPinLen) -> do
+        unsafeUseAsCStringLen newPin $ \(newPinPtr, newPinLen) -> do
+            res <- {#call unsafe CK_FUNCTION_LIST.C_SetPIN#} funcListPtr sessHandle (castPtr oldPinPtr)
+                (fromIntegral oldPinLen) (castPtr newPinPtr) (fromIntegral newPinLen)
+            return (fromIntegral res)
+
+{#fun unsafe CK_FUNCTION_LIST.C_GetSessionInfo as getSessionInfo'
+  {`FunctionListPtr',
+   `SessionHandle',
+   alloca- `SessionInfo' peek* } -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_GetSlotInfo as getSlotInfo'
+  {`FunctionListPtr',
+   `SlotId',
+   alloca- `SlotInfo' peek* } -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_GetTokenInfo as getTokenInfo'
+  {`FunctionListPtr',
+   `SlotId',
+   alloca- `TokenInfo' peek* } -> `Rv'
+#}
+
+openSession' functionListPtr slotId flags =
+  alloca $ \slotIdPtr -> do
+    res <- {#call unsafe CK_FUNCTION_LIST.C_OpenSession#} functionListPtr (fromIntegral slotId) (fromIntegral flags) nullPtr nullFunPtr slotIdPtr
+    slotId <- peek slotIdPtr
+    return (fromIntegral res, fromIntegral slotId)
+
+{#fun unsafe CK_FUNCTION_LIST.C_CloseSession as closeSession'
+ {`FunctionListPtr',
+  `SessionHandle' } -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_CloseAllSessions as closeAllSessions'
+ {`FunctionListPtr',
+  `SlotId' } -> `Rv' fromIntegral#}
+
+
+{#fun unsafe CK_FUNCTION_LIST.C_Finalize as finalize
+ {`FunctionListPtr',
+  alloca- `()' } -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_FindObjectsInit as findObjectsInit'
+ {`FunctionListPtr',
+  `SessionHandle',
+  `LlAttributePtr',
+  `CULong'} -> `Rv'
+#}
+
+findObjects' functionListPtr session maxObjects = do
+  alloca $ \arrayLenPtr -> do
+    poke arrayLenPtr (fromIntegral 0)
+    allocaArray maxObjects $ \array -> do
+      res <- {#call unsafe CK_FUNCTION_LIST.C_FindObjects#} functionListPtr session array (fromIntegral maxObjects) arrayLenPtr
+      arrayLen <- peek arrayLenPtr
+      objectHandles <- peekArray (fromIntegral arrayLen) array
+      return (fromIntegral res, objectHandles)
+
+{#fun unsafe CK_FUNCTION_LIST.C_FindObjectsFinal as findObjectsFinal'
+ {`FunctionListPtr',
+  `CULong' } -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_GetOperationState as getOperationState'
+ {`FunctionListPtr',
+  `SessionHandle',
+  castPtr `Ptr CUChar',
+  `CULong' peek*} ->  `Rv'
+#}
+
+_login :: FunctionListPtr -> SessionHandle -> UserType -> BU8.ByteString -> IO (Rv)
+_login functionListPtr session userType pin = do
+    unsafeUseAsCStringLen pin $ \(pinPtr, pinLen) -> do
+        res <- {#call unsafe CK_FUNCTION_LIST.C_Login#} functionListPtr session (fromIntegral $ fromEnum userType) (castPtr pinPtr) (fromIntegral pinLen)
+        return (fromIntegral res)
+
+{#fun unsafe CK_FUNCTION_LIST.C_Logout as logout'
+ {`FunctionListPtr',
+  `SessionHandle'} ->  `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_DestroyObject as destroyObject'
+ {`FunctionListPtr',
+  `SessionHandle',
+  `ObjectHandle'} ->  `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_GenerateKey as generateKey'
+ {`FunctionListPtr',
+  `SessionHandle',
+  with* `Mech',
+  `LlAttributePtr',
+  `CULong',
+  alloca- `ObjectHandle' peek*} -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_GenerateKeyPair as generateKeyPair'
+ {`FunctionListPtr',
+  `SessionHandle',
+  with* `Mech',
+  `LlAttributePtr',
+  `CULong',
+  `LlAttributePtr',
+  `CULong',
+  alloca- `ObjectHandle' peek*,
+  alloca- `ObjectHandle' peek*} -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_GetMechanismList as getMechanismList'
+  {`FunctionListPtr',
+   `SlotId',
+   castPtr `Ptr CUChar',
+   `CULong' peek*} -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_GetMechanismInfo as _getMechanismInfo
+  {`FunctionListPtr',
+   `SlotId',
+   `Int',
+   alloca- `MechInfo' peek* } -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_DeriveKey as deriveKey'
+ {`FunctionListPtr',
+  `SessionHandle',
+  with* `Mech',
+  `ObjectHandle',
+  `LlAttributePtr',
+  `CULong',
+  alloca- `ObjectHandle' peek*} -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_CreateObject as createObject'
+ {`FunctionListPtr',
+  `SessionHandle',
+  `LlAttributePtr',
+  `CULong',
+  alloca- `ObjectHandle' peek*} -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_CopyObject as copyObject'
+ {`FunctionListPtr',
+  `SessionHandle',
+  `ObjectHandle',
+  `LlAttributePtr',
+  `CULong',
+  alloca- `ObjectHandle' peek*} -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_GetObjectSize as getObjectSize'
+ {`FunctionListPtr',
+  `SessionHandle',
+  `ObjectHandle',
+  alloca- `CULong' peek*} -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_GetAttributeValue as getAttributeValue'
+ {`FunctionListPtr',
+  `SessionHandle',
+  `ObjectHandle',
+  `LlAttributePtr',
+  `CULong'} -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_SetAttributeValue as setAttributeValue'
+ {`FunctionListPtr',
+  `SessionHandle',
+  `ObjectHandle',
+  `LlAttributePtr',
+  `CULong'} -> `Rv'
+#}
+
 {#fun unsafe CK_FUNCTION_LIST.C_DecryptInit as decryptInit'
  {`FunctionListPtr',
   `SessionHandle',
@@ -1264,7 +1089,6 @@ getObjectAttr' functionListPtr sessionHandle objHandle attrType = do
   castPtr `Ptr CUChar',
   with* `CULong' peek*} -> `Rv'
 #}
-
 
 {#fun unsafe CK_FUNCTION_LIST.C_EncryptInit as encryptInit'
  {`FunctionListPtr',
@@ -1298,7 +1122,6 @@ getObjectAttr' functionListPtr sessionHandle objHandle attrType = do
   with* `CULong' peek*} -> `Rv'
 #}
 
-
 {#fun unsafe CK_FUNCTION_LIST.C_DigestInit as digestInit'
  {`FunctionListPtr',
   `SessionHandle',
@@ -1330,14 +1153,12 @@ getObjectAttr' functionListPtr sessionHandle objHandle attrType = do
   with* `CULong' peek*} -> `Rv'
 #}
 
-
 {#fun unsafe CK_FUNCTION_LIST.C_SignRecoverInit as signRecoverInit'
  {`FunctionListPtr',
   `SessionHandle',
   with* `Mech',
   `ObjectHandle'} -> `Rv'
 #}
-
 
 {#fun unsafe CK_FUNCTION_LIST.C_SignRecover as signRecover'
  {`FunctionListPtr',
@@ -1347,7 +1168,6 @@ getObjectAttr' functionListPtr sessionHandle objHandle attrType = do
   castPtr `Ptr CUChar',
   with* `CULong' peek*} -> `Rv'
 #}
-
 
 {#fun unsafe CK_FUNCTION_LIST.C_VerifyInit as verifyInit'
  {`FunctionListPtr',
@@ -1387,14 +1207,12 @@ getObjectAttr' functionListPtr sessionHandle objHandle attrType = do
   with* `CULong' peek*} -> `Rv'
 #}
 
-
 {#fun unsafe CK_FUNCTION_LIST.C_SeedRandom as seedRandom'
  {`FunctionListPtr',
   `SessionHandle',
   castPtr `Ptr CUChar',
   `CULong'} -> `Rv'
 #}
-
 
 {#fun unsafe CK_FUNCTION_LIST.C_GenerateRandom as generateRandom'
  {`FunctionListPtr',
