@@ -31,6 +31,7 @@ library
     Default-language:  Haskell2010
 
 test-suite pkcs11-tests
+    hs-source-dirs: tests
     type: exitcode-stdio-1.0
     main-is:            Test.hs
     build-depends:

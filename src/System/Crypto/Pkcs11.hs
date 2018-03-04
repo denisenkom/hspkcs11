@@ -53,6 +53,8 @@ module System.Crypto.Pkcs11
     -- * Session management
   , Session
   , withSession
+  , withROSession
+  , withRWSession
   , login
   , UserType(..)
   , logout
@@ -289,17 +291,20 @@ _closeSessionEx (Session sessionHandle functionListPtr) = do
 
 -- | Opens a read-only or read-write session with a token in a given slot and then closes it after callback function is finished.
 withSession ::
-     Library -- ^ Library to use.
+     Bool -- ^ If True will open writable session, otherwise will open read-only session.
+  -> Library -- ^ Library to use.
   -> SlotId -- ^ Slot ID for which to open session.
-  -> Bool -- ^ If True will open writable session, otherwise will open read-only session.
   -> (Session -> IO a) -- ^ Callback function which is executed while session is open.
   -> IO a -- ^ Returns a result of callback function.
-withSession lib slotId writable f = do
+withSession writable lib slotId f = do
   let flags =
         if writable
           then _rwSession
           else 0
   bracket (_openSessionEx lib slotId (flags .|. _serialSession)) _closeSessionEx f
+
+withRWSession = withSession True
+withROSession = withSession False
 
 _findObjectsInit :: Session -> [Attribute] -> IO ()
 _findObjectsInit (Session sessionHandle functionListPtr) attribs =
