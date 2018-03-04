@@ -28,7 +28,11 @@ withSessionT lib slotId f =
 
 testAesExtractableKeyGeneration lib slotId =
   withSessionT lib slotId $ \sess -> do
-    aesKeyHandle <- generateKey (simpleMech AesKeyGen) [ValueLen 16, A.Label "testaeskey", Extractable True] sess
+    aesKeyHandle <- generateKey (simpleMech AesKeyGen) [ValueLen 16, A.Label "testaeskey", Extractable True, Modifiable True] sess
+    extractable <- getExtractable aesKeyHandle
+    modifiable <- getModifiable aesKeyHandle
+    assertBool "Extractable attribute should be true" extractable
+    assertBool "Modifiable attribute should be true" modifiable
     let clearText = BS.pack [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     encData <- encrypt (simpleMech AesEcb) aesKeyHandle clearText Nothing
     decData <- decrypt (simpleMech AesEcb) aesKeyHandle encData Nothing

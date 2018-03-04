@@ -11,6 +11,8 @@ module System.Crypto.Pkcs11.Attribs (
   , getWrapFlag
   , getUnwrapFlag
   , getSignFlag
+  , getExtractable
+  , getModifiable
   , getModulus
   , getPublicExponent
   , getPrime
@@ -41,6 +43,10 @@ getWrapFlag = getBoolAttr WrapType
 getUnwrapFlag = getBoolAttr UnwrapType
 
 getSignFlag = getBoolAttr SignType
+
+getExtractable = getBoolAttr ExtractableType
+
+getModifiable = getBoolAttr ModifiableType
 
 getModulus :: Object -> IO Integer
 getModulus (Object funcListPtr sessHandle objHandle) = do

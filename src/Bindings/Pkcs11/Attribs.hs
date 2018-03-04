@@ -28,19 +28,29 @@ data Attribute = Class ClassType -- ^ class of an object, e.g. 'PrivateKey', 'Se
     | Token Bool -- ^ whether object is stored on the token or is a temporary session object
     | Decrypt Bool -- ^ allow/deny encryption function for an object
     | Sign Bool -- ^ allow/deny signing function for an object
-    | ModulusBits Int -- ^ number of bits used by modulus, for example in RSA public key
+    | ModulusBits CULong -- ^ number of bits used by modulus, for example in RSA public key
     | Modulus Integer -- ^ modulus value, used by RSA keys
     | PublicExponent Integer -- ^ value of public exponent, used by RSA public keys
-    | PrimeBits Int -- ^ number of bits used by prime in classic Diffie-Hellman
+    | PrimeBits CULong -- ^ number of bits used by prime in classic Diffie-Hellman
     | Prime Integer -- ^ value of prime modulus, used in classic Diffie-Hellman
     | Base Integer -- ^ value of generator, used in classic Diffie-Hellman
-    | ValueLen Int -- ^ length in bytes of the corresponding 'Value' attribute
+    | ValueLen CULong -- ^ length in bytes of the corresponding 'Value' attribute
     | Value BS.ByteString -- ^ object's value attribute, for example it is a DER encoded certificate for certificate objects
     | Extractable Bool -- ^ allows or denys extraction of certain attributes of private keys
+    | Modifiable Bool -- ^ allows or denys modification of object's attributes
     | EcParams BS.ByteString -- ^ DER encoded ANSI X9.62 parameters value for elliptic-curve algorithm
     | EcdsaParams BS.ByteString -- ^ DER encoded ANSI X9.62 parameters value for elliptic-curve algorithm
     | EcPoint BS.ByteString -- ^ DER encoded ANSI X9.62 point for elliptic-curve algorithm
     deriving (Show)
+
+data MarshalAttr = BoolAttr Bool
+    | ClassTypeAttr ClassType
+    | KeyTypeAttr KeyTypeValue
+    | StringAttr String
+    | BigIntAttr Integer
+    | ULongAttr CULong
+    | ByteStringAttr BS.ByteString
+
 
 -- from http://hackage.haskell.org/package/binary-0.5.0.2/docs/src/Data-Binary.html#unroll
 unroll :: Integer -> [Word8]
@@ -62,59 +72,64 @@ _attrType (PrimeBits _) = PrimeBitsType
 _attrType (Token _) = TokenType
 _attrType (ValueLen _) = ValueLenType
 _attrType (Extractable _) = ExtractableType
+_attrType (Modifiable _) = ModifiableType
 _attrType (Value _) = ValueType
 _attrType (Prime _) = PrimeType
 _attrType (Base _) = BaseType
 _attrType (EcParams _) = EcParamsType
 _attrType (EcPoint _) = EcPointType
 
-_valueSize :: Attribute -> Int
-_valueSize (Class _) = sizeOf (0 :: CK_OBJECT_CLASS)
-_valueSize (KeyType _) = sizeOf (0 :: CK_KEY_TYPE)
-_valueSize (Label l) = BU8.length $ BU8.fromString l
-_valueSize (ModulusBits _) = sizeOf (0 :: CULong)
-_valueSize (PrimeBits _) = sizeOf (0 :: CULong)
-_valueSize (Token _) = sizeOf (0 :: CK_BBOOL)
-_valueSize (ValueLen _) = sizeOf (0 :: CULong)
-_valueSize (Extractable _) = sizeOf (0 :: CK_BBOOL)
-_valueSize (Value bs) = BS.length bs
-_valueSize (Prime p) = _bigIntLen p
-_valueSize (Base b) = _bigIntLen b
-_valueSize (EcParams bs) = BS.length bs
-_valueSize (EcPoint bs) = BS.length bs
+_attrToMarshal :: Attribute -> MarshalAttr
+_attrToMarshal (Class v) = ClassTypeAttr v
+_attrToMarshal (KeyType v) = KeyTypeAttr v
+_attrToMarshal (Label v) = StringAttr v
+_attrToMarshal (ModulusBits v) = ULongAttr v
+_attrToMarshal (PrimeBits v) = ULongAttr v
+_attrToMarshal (ValueLen v) = ULongAttr v
+_attrToMarshal (Token v) = BoolAttr v
+_attrToMarshal (Extractable v) = BoolAttr v
+_attrToMarshal (Modifiable v) = BoolAttr v
+_attrToMarshal (Value v) = ByteStringAttr v
+_attrToMarshal (Prime v) = BigIntAttr v
+_attrToMarshal (Base v) = BigIntAttr v
+_attrToMarshal (EcParams v) = ByteStringAttr v
+_attrToMarshal (EcPoint v) = ByteStringAttr v
 
-_pokeValue :: Attribute -> Ptr () -> IO ()
-_pokeValue (Class c) ptr = poke (castPtr ptr :: Ptr CK_OBJECT_CLASS) (fromIntegral $ fromEnum c)
-_pokeValue (KeyType k) ptr = poke (castPtr ptr :: Ptr CK_KEY_TYPE) (fromIntegral $ fromEnum k)
-_pokeValue (Label l) ptr =
-  unsafeUseAsCStringLen (BU8.fromString l) $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
-_pokeValue (ModulusBits l) ptr = poke (castPtr ptr :: Ptr CULong) (fromIntegral l)
-_pokeValue (PrimeBits l) ptr = poke (castPtr ptr :: Ptr CULong) (fromIntegral l)
-_pokeValue (Token b) ptr = poke (castPtr ptr :: Ptr CK_BBOOL) (fromBool b :: CK_BBOOL)
-_pokeValue (ValueLen l) ptr = poke (castPtr ptr :: Ptr CULong) (fromIntegral l :: CULong)
-_pokeValue (Extractable b) ptr = poke (castPtr ptr :: Ptr CK_BBOOL) (fromBool b :: CK_BBOOL)
-_pokeValue (Value bs) ptr = unsafeUseAsCStringLen bs $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
-_pokeValue (Prime p) ptr = _pokeBigInt p (castPtr ptr)
-_pokeValue (Base b) ptr = _pokeBigInt b (castPtr ptr)
-_pokeValue (EcParams bs) ptr = unsafeUseAsCStringLen bs $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
-_pokeValue (EcPoint bs) ptr = unsafeUseAsCStringLen bs $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
+_valueSize :: MarshalAttr -> Int
+_valueSize (ClassTypeAttr _) = sizeOf (0 :: CK_OBJECT_CLASS)
+_valueSize (KeyTypeAttr _) = sizeOf (0 :: CK_KEY_TYPE)
+_valueSize (StringAttr l) = BU8.length $ BU8.fromString l
+_valueSize (ULongAttr _) = sizeOf (0 :: CULong)
+_valueSize (BoolAttr _) = sizeOf (0 :: CK_BBOOL)
+_valueSize (ByteStringAttr bs) = BS.length bs
+_valueSize (BigIntAttr p) = _bigIntLen p
+
+_pokeValue :: MarshalAttr -> Ptr () -> IO ()
+_pokeValue (ClassTypeAttr c) ptr = poke (castPtr ptr :: Ptr CK_OBJECT_CLASS) (fromIntegral $ fromEnum c)
+_pokeValue (KeyTypeAttr k) ptr = poke (castPtr ptr :: Ptr CK_KEY_TYPE) (fromIntegral $ fromEnum k)
+_pokeValue (StringAttr s) ptr =
+  unsafeUseAsCStringLen (BU8.fromString s) $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
+_pokeValue (ULongAttr l) ptr = poke (castPtr ptr :: Ptr CULong) (fromIntegral l)
+_pokeValue (BoolAttr b) ptr = poke (castPtr ptr :: Ptr CK_BBOOL) (fromBool b :: CK_BBOOL)
+_pokeValue (ByteStringAttr bs) ptr = unsafeUseAsCStringLen bs $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
+_pokeValue (BigIntAttr p) ptr = _pokeBigInt p (castPtr ptr)
 
 _pokeValues :: [Attribute] -> Ptr () -> IO ()
 _pokeValues [] p = return ()
 _pokeValues (a:rem) p = do
-  _pokeValue a p
-  _pokeValues rem (p `plusPtr` _valueSize a)
+  _pokeValue (_attrToMarshal a) p
+  _pokeValues rem (p `plusPtr` _valueSize (_attrToMarshal a))
 
 _valuesSize :: [Attribute] -> Int
-_valuesSize = foldr ((+) . _valueSize) 0
+_valuesSize = foldr ((+) . (_valueSize . _attrToMarshal)) 0
 
 _makeLowLevelAttrs :: [Attribute] -> Ptr () -> [LlAttribute]
 _makeLowLevelAttrs [] valuePtr = []
 _makeLowLevelAttrs (a:rem) valuePtr =
-  let valuePtr' = valuePtr `plusPtr` _valueSize a
+  let valuePtr' = valuePtr `plusPtr` _valueSize (_attrToMarshal a)
       llAttr =
         LlAttribute
-        {attributeType = _attrType a, attributeValuePtr = valuePtr, attributeSize = fromIntegral $ _valueSize a}
+        {attributeType = _attrType a, attributeValuePtr = valuePtr, attributeSize = fromIntegral $ _valueSize (_attrToMarshal a)}
   in llAttr : _makeLowLevelAttrs rem valuePtr'
 
 _withAttribs :: [Attribute] -> (Ptr LlAttribute -> IO a) -> IO a
@@ -125,42 +140,33 @@ _withAttribs attribs f =
       pokeArray attrsPtr (_makeLowLevelAttrs attribs valuesPtr)
       f attrsPtr
 
-_peekBigInt :: Ptr () -> CULong -> IO Integer
-_peekBigInt ptr len = do
+_peekBigInt ptr len constr = do
   arr <- peekArray (fromIntegral len) (castPtr ptr :: Ptr Word8)
-  return $ foldl (\acc v -> fromIntegral v + (acc * 256)) 0 arr
+  return $ constr $ foldl (\acc v -> fromIntegral v + (acc * 256)) 0 arr
+
+_peekBool ptr len constr = do
+  val <- peek (castPtr ptr :: Ptr CK_BBOOL)
+  return $ constr (val /= 0)
+
+_peekByteString ptr len constr = do
+  val <- BS.packCStringLen (castPtr ptr, fromIntegral len)
+  return $ constr val
 
 _llAttrToAttr :: LlAttribute -> IO Attribute
 _llAttrToAttr (LlAttribute ClassType ptr len) = do
   val <- peek (castPtr ptr :: Ptr CK_OBJECT_CLASS)
   return (Class $ toEnum $ fromIntegral val)
-_llAttrToAttr (LlAttribute ModulusType ptr len) = do
-  val <- _peekBigInt ptr len
-  return (Modulus val)
-_llAttrToAttr (LlAttribute PublicExponentType ptr len) = do
-  val <- _peekBigInt ptr len
-  return (PublicExponent val)
-_llAttrToAttr (LlAttribute PrimeType ptr len) = do
-  val <- _peekBigInt ptr len
-  return (Prime val)
-_llAttrToAttr (LlAttribute BaseType ptr len) = do
-  val <- _peekBigInt ptr len
-  return (Base val)
-_llAttrToAttr (LlAttribute DecryptType ptr len) = do
-  val <- peek (castPtr ptr :: Ptr CK_BBOOL)
-  return $ Decrypt (val /= 0)
-_llAttrToAttr (LlAttribute SignType ptr len) = do
-  val <- peek (castPtr ptr :: Ptr CK_BBOOL)
-  return $ Sign (val /= 0)
-_llAttrToAttr (LlAttribute EcParamsType ptr len) = do
-  val <- BS.packCStringLen (castPtr ptr, fromIntegral len)
-  return $ EcParams val
-_llAttrToAttr (LlAttribute EcdsaParamsType ptr len) = do
-  val <- BS.packCStringLen (castPtr ptr, fromIntegral len)
-  return $ EcdsaParams val
-_llAttrToAttr (LlAttribute EcPointType ptr len) = do
-  val <- BS.packCStringLen (castPtr ptr, fromIntegral len)
-  return $ EcPoint val
+_llAttrToAttr (LlAttribute ModulusType ptr len) = _peekBigInt ptr len Modulus
+_llAttrToAttr (LlAttribute PublicExponentType ptr len) = _peekBigInt ptr len PublicExponent
+_llAttrToAttr (LlAttribute PrimeType ptr len) = _peekBigInt ptr len Prime
+_llAttrToAttr (LlAttribute BaseType ptr len) = _peekBigInt ptr len Base
+_llAttrToAttr (LlAttribute DecryptType ptr len) = _peekBool ptr len Decrypt
+_llAttrToAttr (LlAttribute SignType ptr len) = _peekBool ptr len Sign
+_llAttrToAttr (LlAttribute ExtractableType ptr len) = _peekBool ptr len Sign
+_llAttrToAttr (LlAttribute ModifiableType ptr len) = _peekBool ptr len Modifiable
+_llAttrToAttr (LlAttribute EcParamsType ptr len) = _peekByteString ptr len EcParams
+_llAttrToAttr (LlAttribute EcdsaParamsType ptr len) = _peekByteString ptr len EcdsaParams
+_llAttrToAttr (LlAttribute EcPointType ptr len) = _peekByteString ptr len EcPoint
 _llAttrToAttr (LlAttribute typ _ _) = error ("_llAttrToAttr needs to be implemented for " ++ show typ)
 
 _getAttr :: FunctionListPtr -> SessionHandle -> ObjectHandle -> AttributeType -> Ptr x -> IO ()
