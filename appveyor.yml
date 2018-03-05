@@ -15,4 +15,4 @@ test_script:
 
 cache:
 - c:\\sr
-- C:\\Users\\appveyor\\AppData\\Local\\Programs\\stack
+- C:\Users\appveyor\AppData\Local\Programs\stack
