@@ -26,8 +26,14 @@ data Attribute = Class ClassType -- ^ class of an object, e.g. 'PrivateKey', 'Se
     | KeyType KeyTypeValue -- ^ e.g. 'RSA' or 'AES'
     | Label String -- ^ object's label
     | Token Bool -- ^ whether object is stored on the token or is a temporary session object
+    | Local Bool -- ^ whether key was generated on the token or not
+    | Private Bool -- ^ whether object is a private object or not
+    | Application String -- ^ can be used to specify an application that manages object
     | Decrypt Bool -- ^ allow/deny encryption function for an object
     | Sign Bool -- ^ allow/deny signing function for an object
+    | Derive Bool -- ^ allow/deny key derivation functionality
+    | SecondaryAuth Bool -- ^ if true secondary authentication would be required before key can be used
+    | AlwaysAuthenticate Bool -- ^ if true user would have to supply PIN for each key use
     | ModulusBits CULong -- ^ number of bits used by modulus, for example in RSA public key
     | Modulus Integer -- ^ modulus value, used by RSA keys
     | PublicExponent Integer -- ^ value of public exponent, used by RSA public keys
@@ -37,10 +43,14 @@ data Attribute = Class ClassType -- ^ class of an object, e.g. 'PrivateKey', 'Se
     | ValueLen CULong -- ^ length in bytes of the corresponding 'Value' attribute
     | Value BS.ByteString -- ^ object's value attribute, for example it is a DER encoded certificate for certificate objects
     | Extractable Bool -- ^ allows or denys extraction of certain attributes of private keys
+    | NeverExtractable Bool -- ^ if true key never had been extractable
+    | AlwaysSensitive Bool -- ^ if true key always had sensitive flag on
     | Modifiable Bool -- ^ allows or denys modification of object's attributes
     | EcParams BS.ByteString -- ^ DER encoded ANSI X9.62 parameters value for elliptic-curve algorithm
     | EcdsaParams BS.ByteString -- ^ DER encoded ANSI X9.62 parameters value for elliptic-curve algorithm
     | EcPoint BS.ByteString -- ^ DER encoded ANSI X9.62 point for elliptic-curve algorithm
+    | CheckValue BS.ByteString -- ^ key checksum
+    | KeyGenMechanism MechType -- ^ the mechanism used to generate the key
     deriving (Show, Eq)
 
 data MarshalAttr = BoolAttr Bool
@@ -164,6 +174,10 @@ _llAttrToAttr (LlAttribute ClassType ptr len) = do
 _llAttrToAttr (LlAttribute KeyTypeType ptr len) = do
   val <- peek (castPtr ptr :: Ptr CK_KEY_TYPE)
   return (KeyType $ toEnum $ fromIntegral val)
+_llAttrToAttr (LlAttribute KeyGenMechanismType ptr len) = do
+  val <- peek (castPtr ptr :: Ptr CK_MECHANISM_TYPE)
+  return (KeyGenMechanism $ toEnum $ fromIntegral val)
+_llAttrToAttr (LlAttribute PrivateType ptr len) = _peekBool ptr len Private
 _llAttrToAttr (LlAttribute ModulusType ptr len) = _peekBigInt ptr len Modulus
 _llAttrToAttr (LlAttribute PublicExponentType ptr len) = _peekBigInt ptr len PublicExponent
 _llAttrToAttr (LlAttribute PrimeType ptr len) = _peekBigInt ptr len Prime
@@ -176,6 +190,15 @@ _llAttrToAttr (LlAttribute EcParamsType ptr len) = _peekByteString ptr len EcPar
 _llAttrToAttr (LlAttribute EcdsaParamsType ptr len) = _peekByteString ptr len EcdsaParams
 _llAttrToAttr (LlAttribute EcPointType ptr len) = _peekByteString ptr len EcPoint
 _llAttrToAttr (LlAttribute LabelType ptr len) = _peekU2F8String ptr len Label
+_llAttrToAttr (LlAttribute ApplicationType ptr len) = _peekU2F8String ptr len Application
+_llAttrToAttr (LlAttribute ValueType ptr len) = _peekByteString ptr len Value
+_llAttrToAttr (LlAttribute CheckValueType ptr len) = _peekByteString ptr len CheckValue
+_llAttrToAttr (LlAttribute DeriveType ptr len) = _peekBool ptr len Derive
+_llAttrToAttr (LlAttribute LocalType ptr len) = _peekBool ptr len Local
+_llAttrToAttr (LlAttribute NeverExtractableType ptr len) = _peekBool ptr len NeverExtractable
+_llAttrToAttr (LlAttribute AlwaysSensitiveType ptr len) = _peekBool ptr len AlwaysSensitive
+_llAttrToAttr (LlAttribute SecondaryAuthType ptr len) = _peekBool ptr len SecondaryAuth
+_llAttrToAttr (LlAttribute AlwaysAuthenticateType ptr len) = _peekBool ptr len AlwaysAuthenticate
 _llAttrToAttr (LlAttribute typ _ _) = error ("_llAttrToAttr needs to be implemented for " ++ show typ)
 
 _getAttr :: FunctionListPtr -> SessionHandle -> ObjectHandle -> AttributeType -> Ptr x -> IO ()

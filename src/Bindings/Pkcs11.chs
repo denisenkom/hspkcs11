@@ -34,6 +34,7 @@ type CK_KEY_TYPE = {#type CK_KEY_TYPE#}
 type CK_BBOOL = {#type CK_BBOOL#}
 type CK_BYTE = {#type CK_BYTE#}
 type CK_FLAGS = {#type CK_FLAGS#}
+type CK_MECHANISM_TYPE = {#type CK_MECHANISM_TYPE#}
 type GetFunctionListFunPtr = {#type CK_C_GetFunctionList#}
 type NotifyFunPtr = {#type CK_NOTIFY#}
 type SessionHandle = {#type CK_SESSION_HANDLE#}
@@ -351,7 +352,7 @@ rvToStr rv = "unknown value for error " ++ (show rv)
     CKA_LABEL as LabelType,
     CKA_APPLICATION as ApplicationType,
     CKA_VALUE as ValueType,
-    CKA_OBJECT_ID as ObjectType,
+    CKA_OBJECT_ID as ObjectIdType,
     CKA_CERTIFICATE_TYPE as CertificateType,
     CKA_ISSUER as IssuerType,
     CKA_SERIAL_NUMBER as SerialNumberType,

@@ -35,6 +35,13 @@ testAesExtractableKeyGeneration lib slotId =
     classAttr <- getAttrib ClassType aesKeyHandle
     labelAttr <- getAttrib LabelType aesKeyHandle
     valueAttr <- getAttrib ValueType aesKeyHandle
+    getAttrib PrivateType aesKeyHandle
+    getAttrib CheckValueType aesKeyHandle
+    getAttrib DeriveType aesKeyHandle
+    getAttrib LocalType aesKeyHandle
+    getAttrib NeverExtractableType aesKeyHandle
+    getAttrib AlwaysSensitiveType aesKeyHandle
+    keyGenMechAttr <- getAttrib KeyGenMechanismType aesKeyHandle
     getTokenFlag aesKeyHandle
     getPrivateFlag aesKeyHandle
     getSensitiveFlag aesKeyHandle
@@ -46,6 +53,7 @@ testAesExtractableKeyGeneration lib slotId =
     getVerifyFlag aesKeyHandle
     assertEqual "Class type should be SecretKey" (Class SecretKey) classAttr
     assertEqual "Key type should be AES" AES keyType
+    assertEqual "Key gen mech should be AesKeyGen" (A.KeyGenMechanism AesKeyGen) keyGenMechAttr
     assertBool "Extractable attribute should be true" extractable
     assertBool "Modifiable attribute should be true" modifiable
     assertEqual "Label should be equal to testaeskey" (A.Label "testaeskey") labelAttr
