@@ -41,7 +41,7 @@ data Attribute = Class ClassType -- ^ class of an object, e.g. 'PrivateKey', 'Se
     | EcParams BS.ByteString -- ^ DER encoded ANSI X9.62 parameters value for elliptic-curve algorithm
     | EcdsaParams BS.ByteString -- ^ DER encoded ANSI X9.62 parameters value for elliptic-curve algorithm
     | EcPoint BS.ByteString -- ^ DER encoded ANSI X9.62 point for elliptic-curve algorithm
-    deriving (Show)
+    deriving (Show, Eq)
 
 data MarshalAttr = BoolAttr Bool
     | ClassTypeAttr ClassType
@@ -152,10 +152,18 @@ _peekByteString ptr len constr = do
   val <- BS.packCStringLen (castPtr ptr, fromIntegral len)
   return $ constr val
 
+_peekU2F8String :: Ptr () -> CULong -> (String -> Attribute) -> IO Attribute
+_peekU2F8String ptr len constr = do
+  val <- BS.packCStringLen (castPtr ptr, fromIntegral len)
+  return $ constr $ BU8.toString val
+
 _llAttrToAttr :: LlAttribute -> IO Attribute
 _llAttrToAttr (LlAttribute ClassType ptr len) = do
   val <- peek (castPtr ptr :: Ptr CK_OBJECT_CLASS)
   return (Class $ toEnum $ fromIntegral val)
+_llAttrToAttr (LlAttribute KeyTypeType ptr len) = do
+  val <- peek (castPtr ptr :: Ptr CK_KEY_TYPE)
+  return (KeyType $ toEnum $ fromIntegral val)
 _llAttrToAttr (LlAttribute ModulusType ptr len) = _peekBigInt ptr len Modulus
 _llAttrToAttr (LlAttribute PublicExponentType ptr len) = _peekBigInt ptr len PublicExponent
 _llAttrToAttr (LlAttribute PrimeType ptr len) = _peekBigInt ptr len Prime
@@ -167,6 +175,7 @@ _llAttrToAttr (LlAttribute ModifiableType ptr len) = _peekBool ptr len Modifiabl
 _llAttrToAttr (LlAttribute EcParamsType ptr len) = _peekByteString ptr len EcParams
 _llAttrToAttr (LlAttribute EcdsaParamsType ptr len) = _peekByteString ptr len EcdsaParams
 _llAttrToAttr (LlAttribute EcPointType ptr len) = _peekByteString ptr len EcPoint
+_llAttrToAttr (LlAttribute LabelType ptr len) = _peekU2F8String ptr len Label
 _llAttrToAttr (LlAttribute typ _ _) = error ("_llAttrToAttr needs to be implemented for " ++ show typ)
 
 _getAttr :: FunctionListPtr -> SessionHandle -> ObjectHandle -> AttributeType -> Ptr x -> IO ()

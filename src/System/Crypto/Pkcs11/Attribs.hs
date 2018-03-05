@@ -1,8 +1,11 @@
 module System.Crypto.Pkcs11.Attribs (
     Attribute(..)
+  , AttributeType(..)
   , ClassType(..)
   , KeyTypeValue(..)
     -- ** Reading object attributes
+  , getAttrib
+  , getKeyType
   , getTokenFlag
   , getPrivateFlag
   , getSensitiveFlag
@@ -11,6 +14,7 @@ module System.Crypto.Pkcs11.Attribs (
   , getWrapFlag
   , getUnwrapFlag
   , getSignFlag
+  , getVerifyFlag
   , getExtractable
   , getModifiable
   , getModulus
@@ -44,6 +48,8 @@ getUnwrapFlag = getBoolAttr UnwrapType
 
 getSignFlag = getBoolAttr SignType
 
+getVerifyFlag = getBoolAttr VerifyType
+
 getExtractable = getBoolAttr ExtractableType
 
 getModifiable = getBoolAttr ModifiableType
@@ -73,6 +79,13 @@ getEcdsaParams (Object funcListPtr sessHandle objHandle) = do
 getEcPoint (Object funcListPtr sessHandle objHandle) = do
   (EcPoint bs) <- getObjectAttr' funcListPtr sessHandle objHandle EcPointType
   return bs
+
+getKeyType (Object funcListPtr sessHandle objHandle) = do
+  (KeyType kt) <- getObjectAttr' funcListPtr sessHandle objHandle KeyTypeType
+  return kt
+
+getAttrib attrType (Object funcListPtr sessHandle objHandle) = getObjectAttr' funcListPtr sessHandle objHandle attrType
+
 
 -- | Modifies attributes of an object.
 setAttributes (Object funcListPtr sessHandle objHandle) attribs =

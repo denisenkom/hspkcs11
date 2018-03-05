@@ -31,8 +31,24 @@ testAesExtractableKeyGeneration lib slotId =
     aesKeyHandle <- generateKey (simpleMech AesKeyGen) [ValueLen 16, A.Label "testaeskey", Extractable True, Modifiable True] sess
     extractable <- getExtractable aesKeyHandle
     modifiable <- getModifiable aesKeyHandle
+    keyType <- getKeyType aesKeyHandle
+    classAttr <- getAttrib ClassType aesKeyHandle
+    labelAttr <- getAttrib LabelType aesKeyHandle
+    valueAttr <- getAttrib ValueType aesKeyHandle
+    getTokenFlag aesKeyHandle
+    getPrivateFlag aesKeyHandle
+    getSensitiveFlag aesKeyHandle
+    getEncryptFlag aesKeyHandle
+    getDecryptFlag aesKeyHandle
+    getWrapFlag aesKeyHandle
+    getUnwrapFlag aesKeyHandle
+    getSignFlag aesKeyHandle
+    getVerifyFlag aesKeyHandle
+    assertEqual "Class type should be SecretKey" (Class SecretKey) classAttr
+    assertEqual "Key type should be AES" AES keyType
     assertBool "Extractable attribute should be true" extractable
     assertBool "Modifiable attribute should be true" modifiable
+    assertEqual "Label should be equal to testaeskey" (A.Label "testaeskey") labelAttr
     let clearText = BS.pack [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     encData <- encrypt (simpleMech AesEcb) aesKeyHandle clearText Nothing
     decData <- decrypt (simpleMech AesEcb) aesKeyHandle encData Nothing
