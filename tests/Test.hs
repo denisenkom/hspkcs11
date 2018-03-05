@@ -53,6 +53,9 @@ testAesExtractableKeyGeneration lib slotId =
     keyGenMechAttr <- getAttrib KeyGenMechanismType aesKeyHandle
     getAttrib WrapWithTrustedType aesKeyHandle
     unwrapTemplAttr <- getAttrib UnwrapTemplateType aesKeyHandle
+    getAttrib IdType aesKeyHandle
+    getAttrib StartDateType aesKeyHandle
+    getAttrib EndDateType aesKeyHandle
     getTokenFlag aesKeyHandle
     getPrivateFlag aesKeyHandle
     getSensitiveFlag aesKeyHandle

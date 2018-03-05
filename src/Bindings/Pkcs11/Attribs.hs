@@ -25,6 +25,7 @@ data Object =
 data Attribute = Class ClassType -- ^ class of an object, e.g. 'PrivateKey', 'SecretKey'
     | KeyType KeyTypeValue -- ^ e.g. 'RSA' or 'AES'
     | Label String -- ^ object's label
+    | Id BS.ByteString -- ^ object's identifier
     | Token Bool -- ^ whether object is stored on the token or is a temporary session object
     | Local Bool -- ^ whether key was generated on the token or not
     | Private Bool -- ^ whether object is a private object or not
@@ -54,6 +55,9 @@ data Attribute = Class ClassType -- ^ class of an object, e.g. 'PrivateKey', 'Se
     | KeyGenMechanism MechType -- ^ the mechanism used to generate the key
     | WrapWithTrusted Bool -- ^ if true key can only be wrapped with wrapping key that has trusted flag set
     | UnwrapTemplate [Attribute] -- ^ specifies attributes applied to keys unwrapped using this key
+    | DeriveTemplate [Attribute] -- ^ specifies attributes applied to keys derived using this key
+    | StartDate Date
+    | EndDate Date
     deriving (Show, Eq)
 
 data MarshalAttr = BoolAttr Bool
@@ -115,6 +119,14 @@ _attrToMarshal (EcParams v) = ByteStringAttr v
 _attrToMarshal (EcPoint v) = ByteStringAttr v
 _attrToMarshal (UnwrapTemplate v) = AttrListAttr v
 
+_attrListSize l =
+  sizeOf (LlAttribute ClassType nullPtr 0) * length l + _valuesSize l
+
+_pokeAttrList l ptr = do
+  let valuesPtr = ptr `plusPtr` (sizeOf (LlAttribute ClassType nullPtr 0) * length l)
+  pokeArray (castPtr ptr) (_makeLowLevelAttrs l valuesPtr)
+  _pokeValues l valuesPtr
+
 _valueSize :: MarshalAttr -> Int
 _valueSize (ClassTypeAttr _) = sizeOf (0 :: CK_OBJECT_CLASS)
 _valueSize (KeyTypeAttr _) = sizeOf (0 :: CK_KEY_TYPE)
@@ -122,8 +134,7 @@ _valueSize (StringAttr l) = BU8.length $ BU8.fromString l
 _valueSize (ULongAttr _) = sizeOf (0 :: CULong)
 _valueSize (BoolAttr _) = sizeOf (0 :: CK_BBOOL)
 _valueSize (ByteStringAttr bs) = BS.length bs
-_valueSize (AttrListAttr l) =
-  sizeOf (LlAttribute ClassType nullPtr 0) * length l + _valuesSize l
+_valueSize (AttrListAttr l) = _attrListSize l
 
 _pokeValue :: MarshalAttr -> Ptr () -> IO ()
 _pokeValue (ClassTypeAttr c) ptr = poke (castPtr ptr :: Ptr CK_OBJECT_CLASS) (fromIntegral $ fromEnum c)
@@ -134,10 +145,7 @@ _pokeValue (ULongAttr l) ptr = poke (castPtr ptr :: Ptr CULong) (fromIntegral l)
 _pokeValue (BoolAttr b) ptr = poke (castPtr ptr :: Ptr CK_BBOOL) (fromBool b :: CK_BBOOL)
 _pokeValue (ByteStringAttr bs) ptr = unsafeUseAsCStringLen bs $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
 _pokeValue (BigIntAttr p) ptr = _pokeBigInt p (castPtr ptr)
-_pokeValue (AttrListAttr l) ptr = do
-  let valuesPtr = ptr `plusPtr` (sizeOf (LlAttribute ClassType nullPtr 0) * length l)
-  pokeArray (castPtr ptr) (_makeLowLevelAttrs l valuesPtr)
-  _pokeValues l valuesPtr
+_pokeValue (AttrListAttr l) ptr = _pokeAttrList l ptr
 
 
 _pokeValues :: [Attribute] -> Ptr () -> IO ()
@@ -160,11 +168,9 @@ _makeLowLevelAttrs (a:rem) valuePtr =
 
 _withAttribs :: [Attribute] -> (Ptr LlAttribute -> IO a) -> IO a
 _withAttribs attribs f =
-  allocaBytes (_valuesSize attribs) $ \valuesPtr -> do
-    _pokeValues attribs valuesPtr
-    allocaArray (length attribs) $ \attrsPtr -> do
-      pokeArray attrsPtr (_makeLowLevelAttrs attribs valuesPtr)
-      f attrsPtr
+  allocaBytes (_attrListSize attribs) $ \ptr -> do
+    _pokeAttrList attribs ptr
+    f (castPtr ptr)
 
 _peekBigInt ptr len constr = do
   arr <- peekArray (fromIntegral len) (castPtr ptr :: Ptr Word8)
@@ -190,6 +196,10 @@ _peekAttrList ptr len constr = do
   attrArr <- mapM _llAttrToAttr llArr
   return $ constr attrArr
 
+_peekDate :: Ptr () -> CULong -> (Date -> Attribute) -> IO Attribute
+_peekDate ptr len constr = do
+  val <- peek (castPtr ptr :: Ptr Date)
+  return $ constr val
 
 _llAttrToAttr :: LlAttribute -> IO Attribute
 _llAttrToAttr (LlAttribute ClassType ptr len) = do
@@ -225,6 +235,10 @@ _llAttrToAttr (LlAttribute SecondaryAuthType ptr len) = _peekBool ptr len Second
 _llAttrToAttr (LlAttribute AlwaysAuthenticateType ptr len) = _peekBool ptr len AlwaysAuthenticate
 _llAttrToAttr (LlAttribute WrapWithTrustedType ptr len) = _peekBool ptr len WrapWithTrusted
 _llAttrToAttr (LlAttribute UnwrapTemplateType ptr len) = _peekAttrList ptr len UnwrapTemplate
+_llAttrToAttr (LlAttribute DeriveTemplateType ptr len) = _peekAttrList ptr len DeriveTemplate
+_llAttrToAttr (LlAttribute IdType ptr len) = _peekByteString ptr len Id
+_llAttrToAttr (LlAttribute StartDateType ptr len) = _peekDate ptr len StartDate
+_llAttrToAttr (LlAttribute EndDateType ptr len) = _peekDate ptr len EndDate
 _llAttrToAttr (LlAttribute typ _ _) = error ("_llAttrToAttr needs to be implemented for " ++ show typ)
 
 _getAttr :: FunctionListPtr -> SessionHandle -> ObjectHandle -> AttributeType -> Ptr x -> IO ()

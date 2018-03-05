@@ -84,6 +84,22 @@ instance Storable Version where
     {#set CK_VERSION->major#} p (fromIntegral $ versionMajor x)
     {#set CK_VERSION->minor#} p (fromIntegral $ versionMinor x)
 
+data Date = Date {
+    dateYear :: String,
+    dateMonth :: String,
+    dateDay :: String
+} deriving (Show, Eq)
+
+instance Storable Date where
+  sizeOf _ = {#sizeof CK_DATE#}
+  alignment _ = {#alignof CK_DATE#}
+  peek p = Date
+    <$> peekCStringLen (p `plusPtr` {#offsetof CK_DATE->year#}, 4)
+    <*> peekCStringLen (p `plusPtr` {#offsetof CK_DATE->month#}, 2)
+    <*> peekCStringLen (p `plusPtr` {#offsetof CK_DATE->day#}, 2)
+  poke p x = do
+    error "not implemented"
+
 -- | Represents general library information. Returned by 'getInfo' function.
 data LibraryInfo = LibraryInfo {
     -- | Cryptoki interface version number, for compatibility with future revisions of this interface
@@ -381,7 +397,7 @@ rvToStr rv = "unknown value for error " ++ (show rv)
     CKA_VERIFY_RECOVER as VerifyRecoverType,
     CKA_DERIVE as DeriveType,
     CKA_START_DATE as StartDateType,
-    CKA_END_DATE as EndDataType,
+    CKA_END_DATE as EndDateType,
     CKA_PUBLIC_EXPONENT as PublicExponentType,
     CKA_PRIVATE_EXPONENT as PrivateExponentType,
     CKA_MODULUS as ModulusType,
