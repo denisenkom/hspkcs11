@@ -29,7 +29,8 @@ data Attribute = Class ClassType -- ^ class of an object, e.g. 'PrivateKey', 'Se
     | Local Bool -- ^ whether key was generated on the token or not
     | Private Bool -- ^ whether object is a private object or not
     | Application String -- ^ can be used to specify an application that manages object
-    | Decrypt Bool -- ^ allow/deny encryption function for an object
+    | Encrypt Bool -- ^ allow/deny encryption function for an object
+    | Decrypt Bool -- ^ allow/deny decryption function for an object
     | Sign Bool -- ^ allow/deny signing function for an object
     | Derive Bool -- ^ allow/deny key derivation functionality
     | SecondaryAuth Bool -- ^ if true secondary authentication would be required before key can be used
@@ -51,6 +52,8 @@ data Attribute = Class ClassType -- ^ class of an object, e.g. 'PrivateKey', 'Se
     | EcPoint BS.ByteString -- ^ DER encoded ANSI X9.62 point for elliptic-curve algorithm
     | CheckValue BS.ByteString -- ^ key checksum
     | KeyGenMechanism MechType -- ^ the mechanism used to generate the key
+    | WrapWithTrusted Bool -- ^ if true key can only be wrapped with wrapping key that has trusted flag set
+    | UnwrapTemplate [Attribute] -- ^ specifies attributes applied to keys unwrapped using this key
     deriving (Show, Eq)
 
 data MarshalAttr = BoolAttr Bool
@@ -60,6 +63,7 @@ data MarshalAttr = BoolAttr Bool
     | BigIntAttr Integer
     | ULongAttr CULong
     | ByteStringAttr BS.ByteString
+    | AttrListAttr [Attribute]
 
 
 -- from http://hackage.haskell.org/package/binary-0.5.0.2/docs/src/Data-Binary.html#unroll
@@ -83,11 +87,14 @@ _attrType (Token _) = TokenType
 _attrType (ValueLen _) = ValueLenType
 _attrType (Extractable _) = ExtractableType
 _attrType (Modifiable _) = ModifiableType
+_attrType (Decrypt _) = DecryptType
+_attrType (Encrypt _) = EncryptType
 _attrType (Value _) = ValueType
 _attrType (Prime _) = PrimeType
 _attrType (Base _) = BaseType
 _attrType (EcParams _) = EcParamsType
 _attrType (EcPoint _) = EcPointType
+_attrType (UnwrapTemplate _) = UnwrapTemplateType
 
 _attrToMarshal :: Attribute -> MarshalAttr
 _attrToMarshal (Class v) = ClassTypeAttr v
@@ -99,11 +106,14 @@ _attrToMarshal (ValueLen v) = ULongAttr v
 _attrToMarshal (Token v) = BoolAttr v
 _attrToMarshal (Extractable v) = BoolAttr v
 _attrToMarshal (Modifiable v) = BoolAttr v
+_attrToMarshal (Decrypt v) = BoolAttr v
+_attrToMarshal (Encrypt v) = BoolAttr v
 _attrToMarshal (Value v) = ByteStringAttr v
 _attrToMarshal (Prime v) = BigIntAttr v
 _attrToMarshal (Base v) = BigIntAttr v
 _attrToMarshal (EcParams v) = ByteStringAttr v
 _attrToMarshal (EcPoint v) = ByteStringAttr v
+_attrToMarshal (UnwrapTemplate v) = AttrListAttr v
 
 _valueSize :: MarshalAttr -> Int
 _valueSize (ClassTypeAttr _) = sizeOf (0 :: CK_OBJECT_CLASS)
@@ -112,7 +122,8 @@ _valueSize (StringAttr l) = BU8.length $ BU8.fromString l
 _valueSize (ULongAttr _) = sizeOf (0 :: CULong)
 _valueSize (BoolAttr _) = sizeOf (0 :: CK_BBOOL)
 _valueSize (ByteStringAttr bs) = BS.length bs
-_valueSize (BigIntAttr p) = _bigIntLen p
+_valueSize (AttrListAttr l) =
+  sizeOf (LlAttribute ClassType nullPtr 0) * length l + _valuesSize l
 
 _pokeValue :: MarshalAttr -> Ptr () -> IO ()
 _pokeValue (ClassTypeAttr c) ptr = poke (castPtr ptr :: Ptr CK_OBJECT_CLASS) (fromIntegral $ fromEnum c)
@@ -123,6 +134,11 @@ _pokeValue (ULongAttr l) ptr = poke (castPtr ptr :: Ptr CULong) (fromIntegral l)
 _pokeValue (BoolAttr b) ptr = poke (castPtr ptr :: Ptr CK_BBOOL) (fromBool b :: CK_BBOOL)
 _pokeValue (ByteStringAttr bs) ptr = unsafeUseAsCStringLen bs $ \(src, len) -> copyBytes ptr (castPtr src :: Ptr ()) len
 _pokeValue (BigIntAttr p) ptr = _pokeBigInt p (castPtr ptr)
+_pokeValue (AttrListAttr l) ptr = do
+  let valuesPtr = ptr `plusPtr` (sizeOf (LlAttribute ClassType nullPtr 0) * length l)
+  pokeArray (castPtr ptr) (_makeLowLevelAttrs l valuesPtr)
+  _pokeValues l valuesPtr
+
 
 _pokeValues :: [Attribute] -> Ptr () -> IO ()
 _pokeValues [] p = return ()
@@ -167,6 +183,14 @@ _peekU2F8String ptr len constr = do
   val <- BS.packCStringLen (castPtr ptr, fromIntegral len)
   return $ constr $ BU8.toString val
 
+_peekAttrList :: Ptr () -> CULong -> ([Attribute] -> Attribute) -> IO Attribute
+_peekAttrList ptr len constr = do
+  let num = fromIntegral len `div` sizeOf (LlAttribute ClassType nullPtr 0)
+  llArr <- peekArray num (castPtr ptr)
+  attrArr <- mapM _llAttrToAttr llArr
+  return $ constr attrArr
+
+
 _llAttrToAttr :: LlAttribute -> IO Attribute
 _llAttrToAttr (LlAttribute ClassType ptr len) = do
   val <- peek (castPtr ptr :: Ptr CK_OBJECT_CLASS)
@@ -199,6 +223,8 @@ _llAttrToAttr (LlAttribute NeverExtractableType ptr len) = _peekBool ptr len Nev
 _llAttrToAttr (LlAttribute AlwaysSensitiveType ptr len) = _peekBool ptr len AlwaysSensitive
 _llAttrToAttr (LlAttribute SecondaryAuthType ptr len) = _peekBool ptr len SecondaryAuth
 _llAttrToAttr (LlAttribute AlwaysAuthenticateType ptr len) = _peekBool ptr len AlwaysAuthenticate
+_llAttrToAttr (LlAttribute WrapWithTrustedType ptr len) = _peekBool ptr len WrapWithTrusted
+_llAttrToAttr (LlAttribute UnwrapTemplateType ptr len) = _peekAttrList ptr len UnwrapTemplate
 _llAttrToAttr (LlAttribute typ _ _) = error ("_llAttrToAttr needs to be implemented for " ++ show typ)
 
 _getAttr :: FunctionListPtr -> SessionHandle -> ObjectHandle -> AttributeType -> Ptr x -> IO ()

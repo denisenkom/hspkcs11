@@ -28,7 +28,16 @@ withSessionT lib slotId f =
 
 testAesExtractableKeyGeneration lib slotId =
   withSessionT lib slotId $ \sess -> do
-    aesKeyHandle <- generateKey (simpleMech AesKeyGen) [ValueLen 16, A.Label "testaeskey", Extractable True, Modifiable True] sess
+    aesKeyHandle <-
+      generateKey
+        (simpleMech AesKeyGen)
+        [ ValueLen 16
+        , A.Label "testaeskey"
+        , Extractable True
+        , Modifiable True
+        , UnwrapTemplate []
+        ]
+        sess
     extractable <- getExtractable aesKeyHandle
     modifiable <- getModifiable aesKeyHandle
     keyType <- getKeyType aesKeyHandle
@@ -42,6 +51,8 @@ testAesExtractableKeyGeneration lib slotId =
     getAttrib NeverExtractableType aesKeyHandle
     getAttrib AlwaysSensitiveType aesKeyHandle
     keyGenMechAttr <- getAttrib KeyGenMechanismType aesKeyHandle
+    getAttrib WrapWithTrustedType aesKeyHandle
+    unwrapTemplAttr <- getAttrib UnwrapTemplateType aesKeyHandle
     getTokenFlag aesKeyHandle
     getPrivateFlag aesKeyHandle
     getSensitiveFlag aesKeyHandle
@@ -57,6 +68,7 @@ testAesExtractableKeyGeneration lib slotId =
     assertBool "Extractable attribute should be true" extractable
     assertBool "Modifiable attribute should be true" modifiable
     assertEqual "Label should be equal to testaeskey" (A.Label "testaeskey") labelAttr
+    assertEqual "Unwrap template should be empty" (A.UnwrapTemplate []) unwrapTemplAttr
     let clearText = BS.pack [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     encData <- encrypt (simpleMech AesEcb) aesKeyHandle clearText Nothing
     decData <- decrypt (simpleMech AesEcb) aesKeyHandle encData Nothing
