@@ -16,3 +16,4 @@ test_script:
 cache:
 - c:\\sr
 - C:\Users\appveyor\AppData\Local\Programs\stack
+- stack.exe
