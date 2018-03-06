@@ -44,14 +44,14 @@ testAesExtractableKeyGeneration lib slotId =
     classAttr <- getAttrib ClassType aesKeyHandle
     labelAttr <- getAttrib LabelType aesKeyHandle
     valueAttr <- getAttrib ValueType aesKeyHandle
-    getAttrib PrivateType aesKeyHandle
-    getAttrib CheckValueType aesKeyHandle
-    getAttrib DeriveType aesKeyHandle
-    getAttrib LocalType aesKeyHandle
-    getAttrib NeverExtractableType aesKeyHandle
-    getAttrib AlwaysSensitiveType aesKeyHandle
+    getBoolAttr PrivateType aesKeyHandle
+    getBoolAttr CheckValueType aesKeyHandle
+    getBoolAttr DeriveType aesKeyHandle
+    getBoolAttr LocalType aesKeyHandle
+    getBoolAttr NeverExtractableType aesKeyHandle
+    getBoolAttr AlwaysSensitiveType aesKeyHandle
     keyGenMechAttr <- getAttrib KeyGenMechanismType aesKeyHandle
-    getAttrib WrapWithTrustedType aesKeyHandle
+    getBoolAttr WrapWithTrustedType aesKeyHandle
     unwrapTemplAttr <- getAttrib UnwrapTemplateType aesKeyHandle
     getAttrib IdType aesKeyHandle
     getAttrib StartDateType aesKeyHandle

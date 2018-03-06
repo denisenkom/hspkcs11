@@ -5,6 +5,7 @@ module System.Crypto.Pkcs11.Attribs (
   , KeyTypeValue(..)
     -- ** Reading object attributes
   , getAttrib
+  , getBoolAttr
   , getKeyType
   , getTokenFlag
   , getPrivateFlag
