@@ -86,21 +86,12 @@ module System.Crypto.Pkcs11
     -- * Encryption/decryption
   , decrypt
   , encrypt
-    -- ** Multipart operations
-  , decryptInit
-  , encryptInit
-  , encryptUpdate
-  , encryptFinal
     -- * Digest
   , digest
-  , digestInit
     -- * Signing
   , sign
   , verify
   , signRecover
-  , signInit
-  , verifyInit
-  , signRecoverInit
     -- * Random
   , seedRandom
   , generateRandom
@@ -108,6 +99,7 @@ module System.Crypto.Pkcs11
 
 import Bindings.Pkcs11
 import Bindings.Pkcs11.Attribs
+import Bindings.Pkcs11.Shared
 import Control.Exception
 import Control.Monad
 import Data.Bits
@@ -224,11 +216,6 @@ generateKey mech attribs (Session sessHandle funcListPtr) =
     if rv /= 0
       then fail $ "failed to generate key: " ++ rvToStr rv
       else return $ Object funcListPtr sessHandle keyHandle
-
--- | Represent session. Created by 'withSession' function.
-data Session =
-  Session SessionHandle
-          FunctionListPtr
 
 -- | Load PKCS#11 dynamically linked library from given path
 --
@@ -440,35 +427,6 @@ logout (Session sessionHandle functionListPtr) = do
   rv <- logout' functionListPtr sessionHandle
   when (rv /= 0) $ fail $ "logout failed: " ++ rvToStr rv
 
--- | Initialize a multi-part decryption operation using provided mechanism and key.
-decryptInit :: Mech -> Object -> IO ()
-decryptInit mech (Object funcListPtr sessionHandle objHandle) = do
-  rv <- decryptInit' funcListPtr sessionHandle mech objHandle
-  when (rv /= 0) $ fail $ "failed to initiate decryption: " ++ rvToStr rv
-
-varLenGet :: Maybe CULong -> ((Ptr CUChar, CULong) -> IO (Rv, CULong)) -> IO (Rv, BS.ByteString)
-varLenGet Nothing func = do
-  (rv, needLen) <- func (nullPtr, 0)
-  if rv /= 0
-    then fail $ "failed to query resulting size for operation" ++ rvToStr rv
-    else allocaBytes (fromIntegral needLen) $ \outDataPtr -> do
-           (rv, actualLen) <- func (outDataPtr, needLen)
-           if rv == errBufferTooSmall
-             then fail "function returned CKR_BUFFER_TOO_SMALL when it shoudln't"
-             else if rv /= 0
-                    then return (rv, BS.empty)
-                    else do
-                      resBs <- BS.packCStringLen (castPtr outDataPtr, fromIntegral actualLen)
-                      return (rv, resBs)
-varLenGet (Just len) func =
-  allocaBytes (fromIntegral len) $ \outDataPtr -> do
-    (rv, actualLen) <- func (outDataPtr, len)
-    if rv /= 0
-      then return (rv, BS.empty)
-      else do
-        resBs <- BS.packCStringLen (castPtr outDataPtr, fromIntegral actualLen)
-        return (rv, resBs)
-
 -- | Decrypt data using provided mechanism and key handle.
 --
 -- Example AES ECB decryption.
@@ -490,15 +448,6 @@ decrypt mech (Object functionListPtr sessionHandle keyHandle) encData maybeOutLe
       then fail $ "failed to decrypt: " ++ rvToStr rv
       else return bs
 
--- | Initialize multi-part encryption operation.
-encryptInit ::
-     Mech -- ^ Mechanism to use for encryption.
-  -> Object -- ^ Encryption key.
-  -> IO ()
-encryptInit mech (Object functionListPtr sessionHandle obj) = do
-  rv <- encryptInit' functionListPtr sessionHandle mech obj
-  when (rv /= 0) $ fail $ "failed to initiate decryption: " ++ rvToStr rv
-
 -- | Encrypt data using provided mechanism and key handle.
 encrypt ::
      Mech -- ^ Mechanism to use for encryption.
@@ -515,26 +464,6 @@ encrypt mech (Object functionListPtr sessionHandle keyHandle) encData maybeOutLe
     if rv /= 0
       then fail $ "failed to decrypt: " ++ rvToStr rv
       else return bs
-
-encryptUpdate (Session sessHandle funcListPtr) inData maybeOutLen =
-  unsafeUseAsCStringLen inData $ \(inDataPtr, inDataLen) -> do
-    (rv, bs) <-
-      varLenGet maybeOutLen $
-      uncurry (encryptUpdate' funcListPtr sessHandle (castPtr inDataPtr) (fromIntegral inDataLen))
-    if rv /= 0
-      then fail $ "failed to encrypt part: " ++ rvToStr rv
-      else return bs
-
-encryptFinal (Session sessHandle funcListPtr) maybeOutLen = do
-  (rv, bs) <- varLenGet maybeOutLen $ uncurry (encryptFinal' funcListPtr sessHandle)
-  if rv /= 0
-    then fail $ "failed to complete encryption: " ++ rvToStr rv
-    else return bs
-
-digestInit :: Mech -> Session -> IO ()
-digestInit mech (Session sessHandle funcListPtr) = do
-  rv <- digestInit' funcListPtr sessHandle mech
-  when (rv /= 0) $ fail $ "failed to initialize digest operation: " ++ rvToStr rv
 
 -- | Calculates digest aka hash of a data using provided mechanism.
 --

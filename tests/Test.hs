@@ -117,8 +117,7 @@ oldtest lib slotId = do
       generateKey (simpleMech AesKeyGen) [ValueLen 16, Token True, A.Label "testaeskey", Extractable True] sess
     putStrLn $ "generated key " ++ show aesKeyHandle
     putStrLn "encryption"
-    encryptInit (simpleMech AesEcb) aesKeyHandle
-    encData <- PL.encrypt sess (BSL.pack [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    encData <- PL.encrypt (simpleMech AesEcb) aesKeyHandle (BSL.pack [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
     print encData
     putStrLn "decryption"
     decData <- decrypt (simpleMech AesEcb) aesKeyHandle (BSL.toStrict encData) Nothing

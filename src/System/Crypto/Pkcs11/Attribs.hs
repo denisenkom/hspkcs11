@@ -29,6 +29,7 @@ module System.Crypto.Pkcs11.Attribs (
 ) where
 import Bindings.Pkcs11
 import Bindings.Pkcs11.Attribs
+import Bindings.Pkcs11.Shared
 import Foreign.Ptr
 import Control.Monad (when)
 

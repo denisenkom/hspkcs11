@@ -1,5 +1,6 @@
 module Bindings.Pkcs11.Attribs where
 import Bindings.Pkcs11
+import Bindings.Pkcs11.Shared
 import Data.Bits
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.UTF8 as BU8
@@ -14,12 +15,6 @@ import Foreign.Ptr
 import Foreign.Storable
 import Control.Monad (when)
 
-
-data Object =
-  Object FunctionListPtr
-         SessionHandle
-         ObjectHandle
-  deriving (Show)
 
 -- | Represents an attribute of an object
 data Attribute = Class ClassType -- ^ class of an object, e.g. 'PrivateKey', 'SecretKey'
