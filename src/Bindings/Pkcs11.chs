@@ -1165,6 +1165,20 @@ _login functionListPtr session userType pin = do
   with* `CULong' peek*} -> `Rv'
 #}
 
+{#fun unsafe CK_FUNCTION_LIST.C_SignUpdate as signUpdate'
+ {`FunctionListPtr',
+  `SessionHandle',
+  castPtr `Ptr CUChar',
+  `CULong'} -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_SignFinal as signFinal'
+ {`FunctionListPtr',
+  `SessionHandle',
+  castPtr `Ptr CUChar',
+  with* `CULong' peek*} -> `Rv'
+#}
+
 {#fun unsafe CK_FUNCTION_LIST.C_SignRecoverInit as signRecoverInit'
  {`FunctionListPtr',
   `SessionHandle',
@@ -1193,6 +1207,20 @@ _login functionListPtr session userType pin = do
   `SessionHandle',
   castPtr `Ptr CUChar',
   `CULong',
+  castPtr `Ptr CUChar',
+  `CULong'} -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_VerifyUpdate as verifyUpdate'
+ {`FunctionListPtr',
+  `SessionHandle',
+  castPtr `Ptr CUChar',
+  `CULong'} -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_VerifyFinal as verifyFinal'
+ {`FunctionListPtr',
+  `SessionHandle',
   castPtr `Ptr CUChar',
   `CULong'} -> `Rv'
 #}

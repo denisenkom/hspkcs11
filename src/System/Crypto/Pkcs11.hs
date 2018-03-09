@@ -487,11 +487,6 @@ digest mech (Session sessHandle funcListPtr) digestData maybeOutLen = do
       then fail $ "failed to digest: " ++ rvToStr rv
       else return bs
 
-signInit :: Mech -> Object -> IO ()
-signInit mech (Object funcListPtr sessHandle objHandle) = do
-  rv <- signInit' funcListPtr sessHandle mech objHandle
-  when (rv /= 0) $ fail $ "failed to initialize signing operation: " ++ rvToStr rv
-
 -- | Signs data using provided mechanism and key.
 --
 -- Example signing with RSA PKCS#1
@@ -512,11 +507,6 @@ sign mech (Object funcListPtr sessHandle key) signData maybeOutLen = do
       then fail $ "failed to sign: " ++ rvToStr rv
       else return bs
 
-signRecoverInit :: Mech -> Object -> IO ()
-signRecoverInit mech (Object funcListPtr sessHandle objHandle) = do
-  rv <- signRecoverInit' funcListPtr sessHandle mech objHandle
-  when (rv /= 0) $ fail $ "failed to initialize signing with recovery operation: " ++ rvToStr rv
-
 signRecover (Session sessHandle funcListPtr) signData maybeOutLen =
   unsafeUseAsCStringLen signData $ \(signDataPtr, signDataLen) -> do
     (rv, bs) <-
@@ -525,11 +515,6 @@ signRecover (Session sessHandle funcListPtr) signData maybeOutLen =
     if rv /= 0
       then fail $ "failed to sign with recovery: " ++ rvToStr rv
       else return bs
-
-verifyInit :: Mech -> Object -> IO ()
-verifyInit mech (Object funcListPtr sessHandle objHandle) = do
-  rv <- verifyInit' funcListPtr sessHandle mech objHandle
-  when (rv /= 0) $ fail $ "failed to initialize verify operation: " ++ rvToStr rv
 
 -- | Verifies signature using provided mechanism and key.
 --
