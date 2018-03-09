@@ -1111,7 +1111,23 @@ _login functionListPtr session userType pin = do
   with* `CULong' peek*} -> `Rv'
 #}
 
+{#fun unsafe CK_FUNCTION_LIST.C_DecryptUpdate as decryptUpdate'
+ {`FunctionListPtr',
+  `SessionHandle',
+  castPtr `Ptr CUChar',
+  `CULong',
+  castPtr `Ptr CUChar',
+  with* `CULong' peek*} -> `Rv'
+#}
+
 {#fun unsafe CK_FUNCTION_LIST.C_EncryptFinal as encryptFinal'
+ {`FunctionListPtr',
+  `SessionHandle',
+  castPtr `Ptr CUChar',
+  with* `CULong' peek*} -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_DecryptFinal as decryptFinal'
  {`FunctionListPtr',
   `SessionHandle',
   castPtr `Ptr CUChar',

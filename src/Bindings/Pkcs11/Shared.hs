@@ -57,10 +57,25 @@ encryptUpdate (Session sessHandle funcListPtr) inData maybeOutLen =
       then fail $ "failed to encrypt part: " ++ rvToStr rv
       else return bs
 
+decryptUpdate (Session sessHandle funcListPtr) inData maybeOutLen =
+  unsafeUseAsCStringLen inData $ \(inDataPtr, inDataLen) -> do
+    (rv, bs) <-
+      varLenGet maybeOutLen $
+      uncurry (decryptUpdate' funcListPtr sessHandle (castPtr inDataPtr) (fromIntegral inDataLen))
+    if rv /= 0
+      then fail $ "failed to encrypt part: " ++ rvToStr rv
+      else return bs
+
 encryptFinal (Session sessHandle funcListPtr) maybeOutLen = do
   (rv, bs) <- varLenGet maybeOutLen $ uncurry (encryptFinal' funcListPtr sessHandle)
   if rv /= 0
     then fail $ "failed to complete encryption: " ++ rvToStr rv
+    else return bs
+
+decryptFinal (Session sessHandle funcListPtr) maybeOutLen = do
+  (rv, bs) <- varLenGet maybeOutLen $ uncurry (decryptFinal' funcListPtr sessHandle)
+  if rv /= 0
+    then fail $ "failed to complete decryption: " ++ rvToStr rv
     else return bs
 
 digestInit :: Mech -> Session -> IO ()
