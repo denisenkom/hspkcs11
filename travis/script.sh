@@ -7,7 +7,10 @@ case $BUILD in
     dpkg -L softhsm2
     dpkg -L libsofthsm2
     ldd /usr/lib/softhsm/libsofthsm2.so
-    stack build --haddock
+    stack --version
+    stack -v build --haddock
+    stack test || true
+    ldd .stack-work/install/x86_64-linux/lts-10.5/8.2.2/bin/pkcs11-tests
     ;;
   cabal)
     if [ -f configure.ac ]; then autoreconf -i; fi
