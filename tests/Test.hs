@@ -8,10 +8,12 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base64 as B64
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.UTF8 as BU8
+import Data.Maybe
 import Numeric
 import System.Crypto.Pkcs11 as P
 import System.Crypto.Pkcs11.Attribs as A
 import qualified System.Crypto.Pkcs11.Lazy as PL
+import System.Environment
 import Test.HUnit
 
 -- generateKey :: Library -> BU8.ByteString -> String -> IO (ObjectHandle, ObjectHandle)
@@ -239,8 +241,9 @@ oldtest lib slotId = do
     logout sess
 
 main = do
+  softHsmPath <- lookupEnv "SOFTHSM_PATH"
   putStrLn "Loading PKCS11 library"
-  lib <- loadLibrary "/usr/local/Cellar/softhsm/2.3.0/lib/softhsm/libsofthsm2.so"
+  lib <- loadLibrary $ fromMaybe "/usr/local/lib/softhsm/libsofthsm2.so" softHsmPath
   allSlotsNum <- getSlotNum lib True
   slots <- getSlotList lib True (fromIntegral allSlotsNum)
   let slotId = head slots
