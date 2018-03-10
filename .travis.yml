@@ -20,7 +20,15 @@ matrix:
   include:
     - env: BUILD=cabal CABALVER=1.24 GHCVER=8.0.1
       compiler: ": #GHC 8.0.1"
-      addons: {apt: {packages: [cabal-install-1.24,ghc-8.0.1,softhsm2-2.2.0], sources: [hvr-ghc, pkg-opendnssec/ppa]}}
+      addons:
+        apt:
+          packages:
+          - cabal-install-1.24
+          - ghc-8.0.1
+          - softhsm2-2.2.0
+          sources:
+          - sourceline: ppa:pkg-opendnssec/ppa
+          - hvr-ghc
 
 before_install:
  - unset CC
