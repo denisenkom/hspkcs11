@@ -23,12 +23,9 @@ matrix:
       addons:
         apt:
           packages:
-          - cabal-install-1.24
-          - ghc-8.0.1
           - softhsm2
           sources:
           - sourceline: ppa:pkg-opendnssec/ppa
-          - hvr-ghc
 
 before_install:
  - unset CC
