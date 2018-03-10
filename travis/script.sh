@@ -4,6 +4,7 @@ set -ex
 
 case $BUILD in
   stack)
+    dpkg -L softhsm2
     stack build --haddock
     stack test
     ;;
