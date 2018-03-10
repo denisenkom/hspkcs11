@@ -5,6 +5,7 @@ set -ex
 case $BUILD in
   stack)
     dpkg -L softhsm2
+    dpkg -L libsofthsm2
     stack build --haddock
     stack test
     ;;
