@@ -6,8 +6,8 @@ case $BUILD in
   stack)
     dpkg -L softhsm2
     dpkg -L libsofthsm2
+    ldd /usr/lib/softhsm/libsofthsm2.so
     stack build --haddock
-    stack test
     ;;
   cabal)
     if [ -f configure.ac ]; then autoreconf -i; fi
