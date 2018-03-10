@@ -2,9 +2,6 @@
 
 set -ex
 
-# add repository which contains softhsm package
-sudo add-apt-repository ppa:pkg-opendnssec/ppa -y
-
 sudo apt-get -qq update
 
 unset CC

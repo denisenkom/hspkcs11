@@ -4,8 +4,6 @@ set -ex
 
 echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
 
-apt-get install softhsm2 -y
-
 case $BUILD in
   stack)
     stack --version
