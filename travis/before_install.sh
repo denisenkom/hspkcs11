@@ -1,5 +1,7 @@
 #!/bin/sh
 
+set -ex
+
 # add repository which contains softhsm package
 sudo add-apt-repository ppa:pkg-opendnssec/ppa
 
