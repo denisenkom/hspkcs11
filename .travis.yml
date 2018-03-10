@@ -1,4 +1,4 @@
-This file has been modified from aeson package
+# This file has been modified from aeson package
 # see https://github.com/bos/aeson/blob/master/.travis.yml
 language: c
 sudo: false
