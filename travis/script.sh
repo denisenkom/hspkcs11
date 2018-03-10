@@ -10,7 +10,8 @@ case $BUILD in
     stack --version
     stack -v build --haddock
     stack test || true
-    ldd .stack-work/install/x86_64-linux/lts-10.5/8.2.2/bin/pkcs11-tests
+    find .stack-work
+    #ldd .stack-work/install/x86_64-linux/lts-10.5/8.2.2/bin/pkcs11-tests
     ;;
   cabal)
     if [ -f configure.ac ]; then autoreconf -i; fi
