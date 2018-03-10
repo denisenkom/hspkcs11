@@ -2,8 +2,6 @@
 
 set -ex
 
-sudo apt-get -qq update
-
 unset CC
 export PATH=$HOME/.local/bin:/opt/ghc/$GHCVER/bin:/opt/cabal/$CABALVER/bin:$PATH
 # Download and unpack the stack executable
