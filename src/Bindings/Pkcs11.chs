@@ -69,6 +69,32 @@ type GetFunctionListFun = (C2HSImp.Ptr (FunctionListPtr)) -> (IO C2HSImp.CULong)
 foreign import ccall unsafe "dynamic"
   getFunctionList'_ :: GetFunctionListFunPtr -> GetFunctionListFun
 
+data InitializeArgs = InitializeArgs {
+    --initArgsCreateMutex :: Ptr (),
+    --initArgsDestroyMutex :: Ptr (),
+    --initArgsLockMutex :: Ptr (),
+    --initArgsUnlockMutex :: Ptr (),
+    initArgsFlags :: CULong
+}
+
+instance Storable InitializeArgs where
+  sizeOf _ = {#sizeof CK_C_INITIALIZE_ARGS#}
+  alignment _ = {#alignof CK_C_INITIALIZE_ARGS#}
+  peek p = do
+    error "peek is not implemented on InitializeArgs"
+  poke p v = do
+    --{#set CK_C_INITIALIZE_ARGS->CreateMutex#} p (initArgsCreateMutex v)
+    --{#set CK_C_INITIALIZE_ARGS->DestroyMutex#} p (initArgsDestroyMutex v)
+    --{#set CK_C_INITIALIZE_ARGS->LockMutex#} p (initArgsLockMutex v)
+    --{#set CK_C_INITIALIZE_ARGS->UnlockMutex#} p (initArgsUnlockMutex v)
+    {#set CK_C_INITIALIZE_ARGS->CreateMutex#} p nullFunPtr
+    {#set CK_C_INITIALIZE_ARGS->DestroyMutex#} p nullFunPtr
+    {#set CK_C_INITIALIZE_ARGS->LockMutex#} p nullFunPtr
+    {#set CK_C_INITIALIZE_ARGS->UnlockMutex#} p nullFunPtr
+    {#set CK_C_INITIALIZE_ARGS->flags#} p (initArgsFlags v)
+    {#set CK_C_INITIALIZE_ARGS->pReserved#} p nullPtr
+
+
 data Version = Version {
     versionMajor :: Int,
     versionMinor :: Int
@@ -862,9 +888,9 @@ instance Storable LlAttribute where
     } deriving (Eq,Show) #}
 
 
-{#fun unsafe CK_FUNCTION_LIST.C_Initialize as initialize
+{#fun unsafe CK_FUNCTION_LIST.C_Initialize as initialize'
  {`FunctionListPtr',
-  alloca- `()' } -> `Rv'
+  `Ptr ()' } -> `Rv'
 #}
 
 {#fun unsafe CK_FUNCTION_LIST.C_GetInfo as getInfo'

@@ -228,10 +228,11 @@ loadLibrary libraryPath = do
   if rv /= 0
     then fail $ "failed to get list of functions " ++ rvToStr rv
     else do
-      rv <- initialize functionListPtr
-      if rv /= 0
-        then fail $ "failed to initialize library " ++ rvToStr rv
-        else return Library {libraryHandle = lib, functionListPtr = functionListPtr}
+      with (InitializeArgs {initArgsFlags=0}) $ \initArgsPtr -> do
+        rv <- initialize' functionListPtr (castPtr initArgsPtr)
+        if rv /= 0
+          then fail $ "failed to initialize library " ++ rvToStr rv
+          else return Library {libraryHandle = lib, functionListPtr = functionListPtr}
 
 -- | Releases resources used by loaded library
 releaseLibrary lib = do
