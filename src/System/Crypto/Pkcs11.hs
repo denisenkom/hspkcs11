@@ -120,6 +120,8 @@ import qualified System.Win32.Types
 
 type DL = System.Win32.Types.HINSTANCE
 
+data RTDLFlags = RTDL_LAZY
+
 dlclose = DLL.freeLibrary
 
 dlopen path _ = DLL.loadLibrary path
@@ -227,10 +229,8 @@ loadLibrary libraryPath = do
   (rv, functionListPtr) <- getFunctionList getFunctionListFunPtr
   if rv /= 0
     then fail $ "failed to get list of functions " ++ rvToStr rv
-    else do
-      ver <- getFunctionListVersion functionListPtr
-      putStrLn $ show ver
-      with (InitializeArgs {initArgsFlags=0}) $ \initArgsPtr -> do
+    else
+      with InitializeArgs {initArgsFlags=0} $ \initArgsPtr -> do
         rv <- initialize' functionListPtr (castPtr initArgsPtr)
         if rv /= 0
           then fail $ "failed to initialize library " ++ rvToStr rv
