@@ -83,6 +83,23 @@ digestInit mech (Session sessHandle funcListPtr) = do
   rv <- digestInit' funcListPtr sessHandle mech
   when (rv /= 0) $ fail $ "failed to initialize digest operation: " ++ rvToStr rv
 
+digestUpdate :: Session -> BS.ByteString -> IO ()
+digestUpdate (Session sessHandle funcListPtr) inData =
+  unsafeUseAsCStringLen inData $ \(inDataPtr, inDataLen) -> do
+    rv <- digestUpdate' funcListPtr sessHandle (castPtr inDataPtr) (fromIntegral inDataLen)
+    when (rv /= 0) $ fail $ "failed to add data to digest operation: " ++ rvToStr rv
+
+digestKey :: Mech -> Session -> ObjectHandle -> IO ()
+digestKey mech (Session sessHandle funcListPtr) key = do
+  rv <- digestKey' funcListPtr sessHandle key
+  when (rv /= 0) $ fail $ "failed to add key to digest operation: " ++ rvToStr rv
+
+digestFinal (Session sessHandle funcListPtr) maybeOutLen = do
+  (rv, bs) <- varLenGet maybeOutLen $ uncurry (digestFinal' funcListPtr sessHandle)
+  if rv /= 0
+    then fail $ "failed to complete digest operation: " ++ rvToStr rv
+    else return bs
+
 -- | Initialize multi-part encryption operation.
 encryptInit ::
      Mech -- ^ Mechanism to use for encryption.

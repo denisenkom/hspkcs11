@@ -32,3 +32,9 @@ sign mech (Object functionListPtr sessionHandle keyHandle) bsl = do
   signInit mech (Object functionListPtr sessionHandle keyHandle)
   mapM_ (signUpdate (Session sessionHandle functionListPtr)) (toChunks bsl)
   signFinal (Session sessionHandle functionListPtr) (Just defaultChunkSize)
+
+digest :: Mech -> Object -> ByteString -> IO BS.ByteString
+digest mech (Object functionListPtr sessionHandle keyHandle) bsl = do
+  digestInit mech (Session sessionHandle functionListPtr)
+  mapM_ (digestUpdate (Session sessionHandle functionListPtr)) (toChunks bsl)
+  digestFinal (Session sessionHandle functionListPtr) (Just defaultChunkSize)

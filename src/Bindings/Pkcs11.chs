@@ -1178,6 +1178,26 @@ _login functionListPtr session userType pin = do
   with* `CULong' peek*} -> `Rv'
 #}
 
+{#fun unsafe CK_FUNCTION_LIST.C_DigestUpdate as digestUpdate'
+ {`FunctionListPtr',
+  `SessionHandle',
+  castPtr `Ptr CUChar',
+  `CULong'} -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_DigestKey as digestKey'
+ {`FunctionListPtr',
+  `SessionHandle',
+  `ObjectHandle'} -> `Rv'
+#}
+
+{#fun unsafe CK_FUNCTION_LIST.C_DigestFinal as digestFinal'
+ {`FunctionListPtr',
+  `SessionHandle',
+  castPtr `Ptr CUChar',
+  with* `CULong' peek*} -> `Rv'
+#}
+
 {#fun unsafe CK_FUNCTION_LIST.C_SignInit as signInit'
  {`FunctionListPtr',
   `SessionHandle',
