@@ -66,9 +66,6 @@ errBufferTooSmall = {#const CKR_BUFFER_TOO_SMALL#} :: {#type CK_RV#}
 -- defined this one manually because I don't know how to make c2hs to define it yet
 type GetFunctionListFun = (C2HSImp.Ptr (FunctionListPtr)) -> (IO C2HSImp.CULong)
 
-foreign import ccall unsafe "dynamic"
-  getFunctionList'_ :: GetFunctionListFunPtr -> GetFunctionListFun
-
 
 getFunctionListVersion :: FunctionListPtr -> IO Version
 getFunctionListVersion funcListPtr = do

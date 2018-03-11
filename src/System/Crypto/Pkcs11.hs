@@ -5,6 +5,7 @@ module System.Crypto.Pkcs11
   (
     -- * Library
     Library
+  , libraryVersion
   , loadLibrary
   , releaseLibrary
     -- ** Reading library information
@@ -136,6 +137,7 @@ import System.Posix.DynamicLinker
 data Library = Library
   { libraryHandle :: DL
   , functionListPtr :: FunctionListPtr
+  , libraryVersion :: Version  -- ^ Library's Cryptoki version
   }
 
 -- | Return parameterless mechanism which can be used in cryptographic operation.
@@ -143,19 +145,45 @@ simpleMech :: MechType -> Mech
 simpleMech mechType = Mech mechType nullPtr 0
 
 
-getFunctionList :: GetFunctionListFunPtr -> IO (Rv, FunctionListPtr)
-getFunctionList getFunctionListPtr =
+foreign import ccall unsafe "dynamic"
+  mkGetFunctionListFun :: GetFunctionListFunPtr -> GetFunctionListFun
+
+callGetFunctionList :: GetFunctionListFunPtr -> IO FunctionListPtr
+callGetFunctionList getFunctionListPtr =
   alloca $ \funcListPtrPtr -> do
-    res <- getFunctionList'_ getFunctionListPtr funcListPtrPtr
-    funcListPtr <- peek funcListPtrPtr
-    return (fromIntegral res, funcListPtr)
+    rv <- mkGetFunctionListFun getFunctionListPtr funcListPtrPtr
+    if rv /= 0
+      then fail $ "failed to get list of functions " ++ rvToStr rv
+      else peek funcListPtrPtr
+
+initialize functionListPtr initArgs =
+  with initArgs $ \initArgsPtr -> do
+    rv <- initialize' functionListPtr (castPtr initArgsPtr)
+    when (rv /= 0) $ fail $ "failed to initialize library " ++ rvToStr rv
+
+-- | Load PKCS#11 dynamically linked library from given path and initialize it
+--
+-- > lib <- loadLibrary "/path/to/dll.so"
+loadLibrary :: String -> IO Library
+loadLibrary libraryPath = do
+  lib <- dlopen libraryPath [RTLD_LAZY]
+  getFunctionListFunPtr <- dlsym lib "C_GetFunctionList"
+  functionListPtr <- callGetFunctionList getFunctionListFunPtr
+  cryptokiVer <- getFunctionListVersion functionListPtr
+  initialize functionListPtr InitializeArgs {initArgsFlags=0}
+  return Library {libraryHandle = lib, functionListPtr = functionListPtr, libraryVersion = cryptokiVer}
+
+-- | Releases resources used by loaded library
+releaseLibrary lib = do
+  rv <- finalize $ functionListPtr lib
+  dlclose $ libraryHandle lib
 
 -- | Return number of slots in the system.
 getSlotNum ::
      Library -- ^ Library to be used for operation.
   -> Bool -- ^ If True will return only slots with tokens in them.
   -> IO CULong -- ^ Number of slots.
-getSlotNum (Library _ functionListPtr) active = do
+getSlotNum (Library _ functionListPtr _) active = do
   (rv, outNum) <- getSlotList' functionListPtr active nullPtr 0
   if rv /= 0
     then fail $ "failed to get number of slots " ++ rvToStr rv
@@ -171,7 +199,7 @@ getSlotList ::
   -> Bool -- ^ If True will return only slots with tokens in them.
   -> Int -- ^ Maximum number of slot IDs to be returned.
   -> IO [SlotId]
-getSlotList (Library _ functionListPtr) active num =
+getSlotList (Library _ functionListPtr _) active num =
   allocaArray num $ \array -> do
     (rv, outNum) <- getSlotList' functionListPtr active array (fromIntegral num)
     if rv /= 0
@@ -184,7 +212,7 @@ getSessionInfo (Session sessHandle funListPtr) = do
     then fail $ "failed to get session info: " ++ rvToStr rv
     else return sessInfo
 
-closeAllSessions (Library _ funcListPtr) slotId = do
+closeAllSessions (Library _ funcListPtr _) slotId = do
   rv <- closeAllSessions' funcListPtr slotId
   when (rv /= 0) $ fail $ "failed to close sessions: " ++ rvToStr rv
 
@@ -219,38 +247,16 @@ generateKey mech attribs (Session sessHandle funcListPtr) =
       then fail $ "failed to generate key: " ++ rvToStr rv
       else return $ Object funcListPtr sessHandle keyHandle
 
--- | Load PKCS#11 dynamically linked library from given path
---
--- > lib <- loadLibrary "/path/to/dll.so"
-loadLibrary :: String -> IO Library
-loadLibrary libraryPath = do
-  lib <- dlopen libraryPath [RTLD_LAZY]
-  getFunctionListFunPtr <- dlsym lib "C_GetFunctionList"
-  (rv, functionListPtr) <- getFunctionList getFunctionListFunPtr
-  if rv /= 0
-    then fail $ "failed to get list of functions " ++ rvToStr rv
-    else
-      with InitializeArgs {initArgsFlags=0} $ \initArgsPtr -> do
-        rv <- initialize' functionListPtr (castPtr initArgsPtr)
-        if rv /= 0
-          then fail $ "failed to initialize library " ++ rvToStr rv
-          else return Library {libraryHandle = lib, functionListPtr = functionListPtr}
-
--- | Releases resources used by loaded library
-releaseLibrary lib = do
-  rv <- finalize $ functionListPtr lib
-  dlclose $ libraryHandle lib
-
 -- | Get general information about Cryptoki library
 getInfo :: Library -> IO LibraryInfo
-getInfo (Library _ functionListPtr) = do
+getInfo (Library _ functionListPtr _) = do
   (rv, info) <- getInfo' functionListPtr
   if rv /= 0
     then fail $ "failed to get library information " ++ rvToStr rv
     else return info
 
 _openSessionEx :: Library -> SlotId -> Int -> IO Session
-_openSessionEx (Library _ functionListPtr) slotId flags = do
+_openSessionEx (Library _ functionListPtr _) slotId flags = do
   (rv, sessionHandle) <- openSession' functionListPtr slotId flags
   if rv /= 0
     then fail $ "failed to open slot: " ++ rvToStr rv
@@ -340,7 +346,7 @@ initToken ::
   -> BU8.ByteString -- ^ token's security officer password
   -> String -- ^ new label for the token
   -> IO ()
-initToken (Library _ funcListPtr) slotId pin label = do
+initToken (Library _ funcListPtr _) slotId pin label = do
   rv <- initToken' funcListPtr slotId pin label
   when (rv /= 0) $ fail $ "failed to initialize token " ++ rvToStr rv
 
@@ -348,7 +354,7 @@ initToken (Library _ funcListPtr) slotId pin label = do
 --
 -- > slotInfo <- getSlotInfo lib slotId
 getSlotInfo :: Library -> SlotId -> IO SlotInfo
-getSlotInfo (Library _ functionListPtr) slotId = do
+getSlotInfo (Library _ functionListPtr _) slotId = do
   (rv, slotInfo) <- getSlotInfo' functionListPtr slotId
   if rv /= 0
     then fail $ "failed to get slot information " ++ rvToStr rv
@@ -358,7 +364,7 @@ getSlotInfo (Library _ functionListPtr) slotId = do
 --
 -- > tokenInfo <- getTokenInfo lib slotId
 getTokenInfo :: Library -> SlotId -> IO TokenInfo
-getTokenInfo (Library _ functionListPtr) slotId = do
+getTokenInfo (Library _ functionListPtr _) slotId = do
   (rv, slotInfo) <- getTokenInfo' functionListPtr slotId
   if rv /= 0
     then fail $ "failed to get token information " ++ rvToStr rv
@@ -619,7 +625,7 @@ generateRandom (Session sessHandle funcListPtr) randLen =
 
 -- | Obtains a list of mechanism types supported by a token
 getMechanismList :: Library -> SlotId -> Int -> IO [Int]
-getMechanismList (Library _ functionListPtr) slotId maxMechanisms =
+getMechanismList (Library _ functionListPtr _) slotId maxMechanisms =
   allocaArray maxMechanisms $ \array -> do
     (rv, outArrayLen) <- getMechanismList' functionListPtr slotId array (fromIntegral maxMechanisms)
     if rv /= 0
@@ -630,7 +636,7 @@ getMechanismList (Library _ functionListPtr) slotId maxMechanisms =
 
 -- | Obtains information about a particular mechanism possibly supported by a token
 getMechanismInfo :: Library -> SlotId -> MechType -> IO MechInfo
-getMechanismInfo (Library _ functionListPtr) slotId mechId = do
+getMechanismInfo (Library _ functionListPtr _) slotId mechId = do
   (rv, types) <- _getMechanismInfo functionListPtr slotId (fromEnum mechId)
   if rv /= 0
     then fail $ "failed to get mechanism information: " ++ rvToStr rv

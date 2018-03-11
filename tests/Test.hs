@@ -244,6 +244,7 @@ main = do
   softHsmPath <- lookupEnv "SOFTHSM_PATH"
   putStrLn "Loading PKCS11 library"
   lib <- loadLibrary $ fromMaybe "/usr/local/lib/softhsm/libsofthsm2.so" softHsmPath
+  putStrLn $ "cryptoki version = " ++ show (libraryVersion lib)
   allSlotsNum <- getSlotNum lib True
   slots <- getSlotList lib True (fromIntegral allSlotsNum)
   let slotId = head slots
