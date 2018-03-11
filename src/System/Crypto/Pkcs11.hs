@@ -228,6 +228,8 @@ loadLibrary libraryPath = do
   if rv /= 0
     then fail $ "failed to get list of functions " ++ rvToStr rv
     else do
+      ver <- getFunctionListVersion functionListPtr
+      putStrLn $ show ver
       with (InitializeArgs {initArgsFlags=0}) $ \initArgsPtr -> do
         rv <- initialize' functionListPtr (castPtr initArgsPtr)
         if rv /= 0

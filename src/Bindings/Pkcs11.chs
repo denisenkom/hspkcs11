@@ -69,6 +69,12 @@ type GetFunctionListFun = (C2HSImp.Ptr (FunctionListPtr)) -> (IO C2HSImp.CULong)
 foreign import ccall unsafe "dynamic"
   getFunctionList'_ :: GetFunctionListFunPtr -> GetFunctionListFun
 
+
+getFunctionListVersion :: FunctionListPtr -> IO Version
+getFunctionListVersion funcListPtr = do
+    peek (funcListPtr `plusPtr` {#offsetof CK_FUNCTION_LIST.version#})
+
+
 data InitializeArgs = InitializeArgs {
     --initArgsCreateMutex :: Ptr (),
     --initArgsDestroyMutex :: Ptr (),
