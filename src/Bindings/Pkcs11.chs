@@ -966,7 +966,7 @@ openSession' functionListPtr slotId flags =
 
 {#fun unsafe CK_FUNCTION_LIST.C_Finalize as finalize
  {`FunctionListPtr',
-  alloca- `()' } -> `Rv'
+  `Ptr ()' } -> `Rv'
 #}
 
 {#fun unsafe CK_FUNCTION_LIST.C_FindObjectsInit as findObjectsInit'

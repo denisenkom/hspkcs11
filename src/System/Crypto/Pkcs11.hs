@@ -174,9 +174,10 @@ loadLibrary libraryPath = do
   return Library {libraryHandle = lib, functionListPtr = functionListPtr, libraryVersion = cryptokiVer}
 
 -- | Releases resources used by loaded library
-releaseLibrary lib = do
-  rv <- finalize $ functionListPtr lib
-  dlclose $ libraryHandle lib
+releaseLibrary (Library handle functionListPtr _) = do
+  rv <- finalize functionListPtr nullPtr
+  when (rv /= 0) $ fail $ "failed to finalize library " ++ rvToStr rv
+  dlclose handle
 
 -- | Return number of slots in the system.
 getSlotNum ::
