@@ -222,7 +222,7 @@ generateKey mech attribs (Session sessHandle funcListPtr) =
 -- > lib <- loadLibrary "/path/to/dll.so"
 loadLibrary :: String -> IO Library
 loadLibrary libraryPath = do
-  lib <- dlopen libraryPath []
+  lib <- dlopen libraryPath [RTLD_LAZY]
   getFunctionListFunPtr <- dlsym lib "C_GetFunctionList"
   (rv, functionListPtr) <- getFunctionList getFunctionListFunPtr
   if rv /= 0
