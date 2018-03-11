@@ -2,17 +2,25 @@
 
 set -ex
 
+# configuring softhsm
+conf_dir=$HOME/.config/softhsm2/
+conf_path=$conf_dir/softhsm2.conf
+var_path=$HOME/softhsmvar
+mkdir -p $conf_dir
+mkdir -p $var_path
+echo directories.tokendir = $var_path > $conf_path
+echo objectstore.backend = file >> $conf_path
+
 case $BUILD in
   stack)
-    dpkg -L softhsm2
-    dpkg -L libsofthsm2
-    ldd /usr/lib/softhsm/libsofthsm2.so
+    #dpkg -L softhsm2
+    #dpkg -L libsofthsm2
+    #ldd /usr/lib/softhsm/libsofthsm2.so
     stack --version
-    stack -v build --haddock
-    stack test || true
+    stack build --haddock --test
     #find .stack-work
-    ls -l .stack-work/dist/x86_64-linux/Cabal-2.0.1.0/build/pkcs11-tests/pkcs11-tests
-    ldd .stack-work/dist/x86_64-linux/Cabal-2.0.1.0/build/pkcs11-tests/pkcs11-tests
+    #ls -l .stack-work/dist/x86_64-linux/Cabal-2.0.1.0/build/pkcs11-tests/pkcs11-tests
+    #ldd .stack-work/dist/x86_64-linux/Cabal-2.0.1.0/build/pkcs11-tests/pkcs11-tests
     ;;
   cabal)
     if [ -f configure.ac ]; then autoreconf -i; fi
