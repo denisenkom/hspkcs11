@@ -120,7 +120,7 @@ import qualified System.Win32.Types
 
 type DL = System.Win32.Types.HINSTANCE
 
-data RTDLFlags = RTDL_LAZY
+data RTDLFlags = RTLD_LAZY
 
 dlclose = DLL.freeLibrary
 
