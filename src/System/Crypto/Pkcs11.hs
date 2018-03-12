@@ -60,7 +60,6 @@ module System.Crypto.Pkcs11
   , login
   , UserType(..)
   , logout
-  , closeAllSessions
   , getSessionInfo
   , SessionInfo
   , sessionInfoSlotId
