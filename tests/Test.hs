@@ -79,6 +79,31 @@ testAesExtractableKeyGeneration lib slotId =
     decData <- decrypt (simpleMech AesEcb) aesKeyHandle encData Nothing
     assertEqual "Decrypted data does not match original" clearText decData
 
+testRsa lib slotId =
+  withRWSession lib slotId $ \sess -> do
+    login sess User defaultPin
+    (pubKeyHandle, privKeyHandle) <-
+      generateKeyPair
+        (simpleMech RsaPkcsKeyPairGen)
+        [ModulusBits 2048]
+        []
+        sess
+    -- Test signing using PKCS#1 v1.5 mode with SHA256
+    swPubKey <- RSA.PublicKey 256 <$> getModulus pubKeyHandle <*> getPublicExponent pubKeyHandle
+    let signedData = "hello"
+    signature <- sign (simpleMech Sha256RsaPkcs) privKeyHandle signedData Nothing
+    assertBool "RSA verification should succeed" $ RSA.rsassa_pkcs1_v1_5_verify RSA.hashSHA256 swPubKey (BSL.fromStrict signedData) (BSL.fromStrict signature)
+    pkcsVerRes <- verify (simpleMech Sha256RsaPkcs) pubKeyHandle signedData signature
+    assertBool "Signature verification should succeed using pkcs11 validation" pkcsVerRes
+
+    -- Test encryption/decryption using PKCS#1 v1.5 mode
+    rng <- newGenIO :: IO SystemRandom
+    let (encryptedBlob, _) = RSA.encryptPKCS rng swPubKey (BSL.fromStrict clearText)
+        clearText = "cleartext"
+    dec <- decrypt (simpleMech RsaPkcs) privKeyHandle (BSL.toStrict encryptedBlob) Nothing
+    assertEqual "Decrypted RSA data should match clear text" clearText dec
+
+
 oldtest lib slotId = do
   info <- getInfo lib
   slotInfo <- getSlotInfo lib slotId
@@ -108,11 +133,6 @@ oldtest lib slotId = do
         sess
     wrappedAesKey <- wrapKey (simpleMech RsaPkcs) pubKeyHandle aesKeyHandle Nothing
     unwrappedAesKey <- unwrapKey (simpleMech RsaPkcs) privKeyHandle wrappedAesKey [Class SecretKey, KeyType AES]
-    let signedData = BS.pack [0, 0, 0, 0]
-    signature <- sign (simpleMech Sha1RsaPkcs) privKeyHandle signedData Nothing
-    verRes <- verify (simpleMech Sha1RsaPkcs) pubKeyHandle signedData signature
-    assertBool "Signature verification should succeed" verRes
-    seedRandom sess signedData
     randData <- generateRandom sess 10
     setAttributes aesKeyHandle [Extractable False]
     aesKeySize <- getObjectSize aesKeyHandle
@@ -127,6 +147,7 @@ oldtest lib slotId = do
       generateKeyPair (simpleMech EcKeyPairGen) [EcParams (B64.decodeLenient "BggqhkjOPQMBBw==")] [] sess
     derEcPoint <- getEcPoint ecPubKey
     derEcParams <- getEcdsaParams ecPubKey
+    let signedData = "hello"
     ecSignature <- sign (simpleMech Ecdsa) ecPrivKey signedData Nothing
     ecVerifyRes <- verify (simpleMech Ecdsa) ecPubKey signedData ecSignature
     assertBool "Signature verification should succeed" ecVerifyRes
@@ -144,8 +165,6 @@ oldtest lib slotId = do
         clearText = "hello00000000000"
         encryptedMessage = AESmod.encryptECB aesKey clearText
     unwrappedKey <- unwrapKey (simpleMech RsaPkcs) objId (BSL.toStrict encKey) [Class SecretKey, KeyType AES]
-    dec <- decrypt (simpleMech RsaPkcs) objId (BSL.toStrict encKey) Nothing
-    assertEqual "Decrypted RSA data should match clear text" aesKeyBs dec
     decAes <- decrypt (simpleMech AesEcb) unwrappedKey encryptedMessage Nothing
     assertEqual "Decrypted data should match original clear text" clearText decAes
 
@@ -168,6 +187,7 @@ main = do
         TestList
           [ "Test AES key generation and encryption" ~: TestCase (testAesExtractableKeyGeneration lib slotId)
           , TestCase (oldtest lib slotId)
+          , "Test RSA key generation and operations" ~: TestCase (testRsa lib slotId)
           ]
   runTestTT tests
   releaseLibrary lib
