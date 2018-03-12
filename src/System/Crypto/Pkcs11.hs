@@ -516,7 +516,15 @@ sign mech (Object funcListPtr sessHandle key) signData maybeOutLen = do
       then fail $ "failed to sign: " ++ rvToStr rv
       else return bs
 
-signRecover (Session sessHandle funcListPtr) signData maybeOutLen =
+-- | Signs data with mechanism which allows data recovery from signature
+signRecover ::
+     Mech -- ^ Mechanism to use for signing.
+  -> Object -- ^ Signing key (usually private key).
+  -> BS.ByteString -- ^ Data to be signed.
+  -> Maybe CULong -- ^ Maximum number of bytes to be returned.
+  -> IO BS.ByteString -- ^ Signature.
+signRecover mech (Object funcListPtr sessHandle key) signData maybeOutLen = do
+  signRecoverInit mech (Object funcListPtr sessHandle key)
   unsafeUseAsCStringLen signData $ \(signDataPtr, signDataLen) -> do
     (rv, bs) <-
       varLenGet maybeOutLen $

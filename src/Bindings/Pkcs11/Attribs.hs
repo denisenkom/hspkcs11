@@ -28,6 +28,7 @@ data Attribute = Class ClassType -- ^ class of an object, e.g. 'PrivateKey', 'Se
     | Encrypt Bool -- ^ allow/deny encryption function for an object
     | Decrypt Bool -- ^ allow/deny decryption function for an object
     | Sign Bool -- ^ allow/deny signing function for an object
+    | SignRecover Bool -- ^ allow/deny sign recover function for an object
     | Derive Bool -- ^ allow/deny key derivation functionality
     | SecondaryAuth Bool -- ^ if true secondary authentication would be required before key can be used
     | AlwaysAuthenticate Bool -- ^ if true user would have to supply PIN for each key use
@@ -88,6 +89,7 @@ _attrType (Extractable _) = ExtractableType
 _attrType (Modifiable _) = ModifiableType
 _attrType (Decrypt _) = DecryptType
 _attrType (Encrypt _) = EncryptType
+_attrType (SignRecover _) = SignRecoverType
 _attrType (Value _) = ValueType
 _attrType (Prime _) = PrimeType
 _attrType (Base _) = BaseType
@@ -107,6 +109,7 @@ _attrToMarshal (Extractable v) = BoolAttr v
 _attrToMarshal (Modifiable v) = BoolAttr v
 _attrToMarshal (Decrypt v) = BoolAttr v
 _attrToMarshal (Encrypt v) = BoolAttr v
+_attrToMarshal (SignRecover v) = BoolAttr v
 _attrToMarshal (Value v) = ByteStringAttr v
 _attrToMarshal (Prime v) = BigIntAttr v
 _attrToMarshal (Base v) = BigIntAttr v
@@ -213,7 +216,8 @@ _llAttrToAttr (LlAttribute PrimeType ptr len) = _peekBigInt ptr len Prime
 _llAttrToAttr (LlAttribute BaseType ptr len) = _peekBigInt ptr len Base
 _llAttrToAttr (LlAttribute DecryptType ptr len) = _peekBool ptr len Decrypt
 _llAttrToAttr (LlAttribute SignType ptr len) = _peekBool ptr len Sign
-_llAttrToAttr (LlAttribute ExtractableType ptr len) = _peekBool ptr len Sign
+_llAttrToAttr (LlAttribute SignRecoverType ptr len) = _peekBool ptr len SignRecover
+_llAttrToAttr (LlAttribute ExtractableType ptr len) = _peekBool ptr len Extractable
 _llAttrToAttr (LlAttribute ModifiableType ptr len) = _peekBool ptr len Modifiable
 _llAttrToAttr (LlAttribute EcParamsType ptr len) = _peekByteString ptr len EcParams
 _llAttrToAttr (LlAttribute EcdsaParamsType ptr len) = _peekByteString ptr len EcdsaParams

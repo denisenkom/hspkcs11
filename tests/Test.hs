@@ -88,8 +88,9 @@ testRsa lib slotId =
         [ModulusBits 2048]
         []
         sess
-    -- Test signing using PKCS#1 v1.5 mode with SHA256
     swPubKey <- RSA.PublicKey 256 <$> getModulus pubKeyHandle <*> getPublicExponent pubKeyHandle
+
+    -- Test signing using PKCS#1 v1.5 mode with SHA256
     let signedData = "hello"
     signature <- sign (simpleMech Sha256RsaPkcs) privKeyHandle signedData Nothing
     assertBool "RSA verification should succeed" $ RSA.rsassa_pkcs1_v1_5_verify RSA.hashSHA256 swPubKey (BSL.fromStrict signedData) (BSL.fromStrict signature)
